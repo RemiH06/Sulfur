@@ -8,7 +8,7 @@
 ███████║╚██████╔╝███████╗██║     ╚██████╔╝██║  ██║
 ╚══════╝ ╚═════╝ ╚══════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝
 
-       by HectorH06 (@HectorH06)          version 1.0
+       by Hex (@RemiH06)          version 1.0
 ```
 
 ### General Description
