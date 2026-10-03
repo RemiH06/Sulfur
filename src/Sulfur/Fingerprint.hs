@@ -13,6 +13,7 @@ import Crypto.Hash (Digest, SHA256, hash)
 import Data.ByteArray qualified as BA
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Normalize (NormalizationMode (NFC), normalize)
 import Data.Word (Word8)
 import Text.Printf (printf)
 
@@ -24,13 +25,15 @@ data Oklch = Oklch
   }
   deriving (Eq, Show)
 
--- | SHA-256 del texto en UTF-8 a OKLCH. La luminosidad se limita a 0.45..0.85
--- para que nunca caiga en negro o blanco puros, y el croma se recorta después
--- lo justo para que el color exista en sRGB sin cambiar luminosidad ni matiz.
+-- | SHA-256 del texto (NFC, UTF-8) a OKLCH. NFC hace que una misma letra
+-- escrita con o sin caracteres combinados dé el mismo color. La luminosidad se
+-- limita a 0.45..0.85 para que nunca caiga en negro o blanco puros, y el croma
+-- se recorta después lo justo para que el color exista en sRGB sin cambiar
+-- luminosidad ni matiz.
 fingerprint :: Text -> Oklch
 fingerprint txt = fitGamut (Oklch l c h)
   where
-    digest = BA.unpack (hash (encodeUtf8 txt) :: Digest SHA256)
+    digest = BA.unpack (hash (encodeUtf8 (normalize NFC txt)) :: Digest SHA256)
     byte i = fromIntegral (digest !! i) :: Double
     h = (byte 0 * 256 + byte 1) / 65536 * 360
     l = 0.45 + byte 2 / 255 * 0.40

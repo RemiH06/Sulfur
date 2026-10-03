@@ -29,7 +29,8 @@ Reglas de seguridad:
 ## Plan Haskell
 
 - Build con cabal (`sulfur.cabal`), toolchain vía GHCup en `C:\ghcup`.
-- Núcleo puro en `src/Sulfur/`: texto UTF-8 a SHA-256, a color OKLCH con croma recortado a sRGB (`Fingerprint.hs`). Imagen después (PNG vía JuicyPixels).
+- Núcleo puro en `src/Sulfur/`: texto normalizado a NFC (`unicode-transforms`), en UTF-8, a SHA-256, a color OKLCH con croma recortado a sRGB (`Fingerprint.hs`). Imagen después (PNG vía JuicyPixels).
+- Bóveda: archivo JSON (`aeson`) con cada entrada cifrada por separado, nonce aleatorio propio por entrada y el nombre de la entrada como dato asociado (AAD), para que mover un cifrado a otro nombre haga fallar el descifrado. La huella nunca se guarda en disco: se calcula al vuelo, porque es un hash sin sal del nombre y lo delataría.
 - `crypton` para las dos capas: SHA-256 de la huella y, en la bóveda, Argon2id + ChaCha20-Poly1305. Se descartó `saltine` porque exige la librería C de libsodium, incómoda en Windows.
 - Pruebas con QuickCheck en `test/Spec.hs`: dentro de sRGB, rango de luminosidad, nunca `#000`/`#fff`, más un valor fijo de referencia para detectar si el algoritmo cambia.
 - CLI primero (`sulfur "<nombre>"`). Interfaz web después, si se decide.
@@ -37,8 +38,7 @@ Reglas de seguridad:
 ## Decisiones pendientes
 
 - Formato de salida de la imagen: tamaño, cuadrícula, degradado o sólido por zona.
-- Almacenamiento de la bóveda: archivo JSON cifrado o SQLite.
+- Nombres de entrada cifrados (recomendado: no filtra en qué servicios hay cuenta) o en claro (`list` sin pedir la maestra).
 - Si la huella visual se muestra en la bóveda de Obsidian o solo en el CLI.
-- Normalización Unicode (NFC) antes del hash: sin ella, "é" compuesta y "é" descompuesta dan colores distintos. Requiere una dependencia extra (`unicode-transforms`).
 - Contra qué fondo se mide el contraste mínimo de la huella (depende de dónde se muestre).
 - Cambiar el algoritmo de la huella cambia todos los colores ya memorizados: congelarlo antes de usarlo en serio.

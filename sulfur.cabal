@@ -19,7 +19,8 @@ library
         base >=4.17 && <5,
         crypton >=2.1 && <2.2,
         ram >=0.22 && <0.23,
-        text >=2.0 && <2.2
+        text >=2.0 && <2.2,
+        unicode-transforms >=0.4 && <0.5
 
 executable sulfur
     import:           shared
@@ -39,4 +40,5 @@ test-suite spec
         base,
         sulfur,
         text,
+        unicode-transforms,
         QuickCheck >=2.15 && <2.20
