@@ -26,15 +26,19 @@ Reglas de seguridad:
 - Redacción en español mexicano, sin guión largo (`redaccion-espanol-mx`).
 - Commits de una línea, conventional (`commit-checkpoints`). No commitear sin pedirlo.
 
-## Plan Haskell (por confirmar)
+## Plan Haskell
 
-- Núcleo puro: texto a hash (SHA-256 de la librería estándar o cripto), hash a color OKLCH, hash a imagen (PNG vía JuicyPixels).
-- Pruebas con QuickCheck: determinismo, rango válido, contraste mínimo.
-- Criptografía con libsodium (`saltine`) o `crypton`, verificar disponibilidad en Hackage antes de usar.
-- CLI primero. Interfaz web después, si se decide.
+- Build con cabal (`sulfur.cabal`), toolchain vía GHCup en `C:\ghcup`.
+- Núcleo puro en `src/Sulfur/`: texto UTF-8 a SHA-256, a color OKLCH con croma recortado a sRGB (`Fingerprint.hs`). Imagen después (PNG vía JuicyPixels).
+- `crypton` para las dos capas: SHA-256 de la huella y, en la bóveda, Argon2id + ChaCha20-Poly1305. Se descartó `saltine` porque exige la librería C de libsodium, incómoda en Windows.
+- Pruebas con QuickCheck en `test/Spec.hs`: dentro de sRGB, rango de luminosidad, nunca `#000`/`#fff`, más un valor fijo de referencia para detectar si el algoritmo cambia.
+- CLI primero (`sulfur "<nombre>"`). Interfaz web después, si se decide.
 
 ## Decisiones pendientes
 
 - Formato de salida de la imagen: tamaño, cuadrícula, degradado o sólido por zona.
 - Almacenamiento de la bóveda: archivo JSON cifrado o SQLite.
 - Si la huella visual se muestra en la bóveda de Obsidian o solo en el CLI.
+- Normalización Unicode (NFC) antes del hash: sin ella, "é" compuesta y "é" descompuesta dan colores distintos. Requiere una dependencia extra (`unicode-transforms`).
+- Contra qué fondo se mide el contraste mínimo de la huella (depende de dónde se muestre).
+- Cambiar el algoritmo de la huella cambia todos los colores ya memorizados: congelarlo antes de usarlo en serio.

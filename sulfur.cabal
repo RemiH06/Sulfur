@@ -1,0 +1,42 @@
+cabal-version:      3.0
+name:               sulfur
+version:            2.0.0.0
+synopsis:           Huella visual determinista a partir de texto
+license:            GPL-3.0-only
+license-file:       LICENSE
+author:             Hex (@RemiH06)
+build-type:         Simple
+
+common shared
+    default-language: GHC2021
+    ghc-options:      -Wall
+
+library
+    import:           shared
+    hs-source-dirs:   src
+    exposed-modules:  Sulfur.Fingerprint
+    build-depends:
+        base >=4.17 && <5,
+        crypton >=2.1 && <2.2,
+        ram >=0.22 && <0.23,
+        text >=2.0 && <2.2
+
+executable sulfur
+    import:           shared
+    hs-source-dirs:   app
+    main-is:          Main.hs
+    build-depends:
+        base,
+        sulfur,
+        text
+
+test-suite spec
+    import:           shared
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Spec.hs
+    build-depends:
+        base,
+        sulfur,
+        text,
+        QuickCheck >=2.15 && <2.20
