@@ -14,8 +14,11 @@ module Sulfur.Vault
   , newVault
   , unlock
   , entries
-  , findEntry
+  , lookupEntry
   , addEntry
+  , replaceSecret
+  , removeEntry
+  , changeMaster
   , encodeVault
   , decodeVault
   , loadVault
@@ -80,6 +83,7 @@ data VaultError
   | TamperedEntry
   | CorruptEntry
   | DuplicateName Text
+  | EntryNotFound Text
   | InvalidFile String
   | InvalidKdfParams
   deriving (Eq, Show)
@@ -152,8 +156,20 @@ entries key = traverse openEntry . vaultEntries
       plain <- maybe (Left TamperedEntry) Right (open key entryAad blob)
       maybe (Left CorruptEntry) Right (decodeStrict plain)
 
-findEntry :: MasterKey -> Text -> Vault -> Either VaultError (Maybe Entry)
-findEntry key name v = find ((== normalize NFC name) . entryName) <$> entries key v
+-- | Posición del blob cuya entrada se llama así (comparando en NFC).
+locate :: MasterKey -> Text -> Vault -> Either VaultError (Int, Entry)
+locate key name v = do
+  es <- entries key v
+  maybe (Left (EntryNotFound normalized)) Right $
+    find ((== normalized) . entryName . snd) (zip [0 ..] es)
+  where
+    normalized = normalize NFC name
+
+lookupEntry :: MasterKey -> Text -> Vault -> Either VaultError Entry
+lookupEntry key name v = snd <$> locate key name v
+
+sealEntry :: MasterKey -> Entry -> IO ByteString
+sealEntry key = seal key entryAad . LBS.toStrict . encode
 
 -- | El nombre se guarda en NFC para que la búsqueda y la huella no dependan
 -- de cómo se escribió.
@@ -163,10 +179,38 @@ addEntry key (Entry name secret) v = case entries key v of
   Right existing
     | normalized `elem` map entryName existing -> pure (Left (DuplicateName normalized))
     | otherwise -> do
-        blob <- seal key entryAad (LBS.toStrict (encode (Entry normalized secret)))
+        blob <- sealEntry key (Entry normalized secret)
         pure (Right v {vaultEntries = vaultEntries v ++ [blob]})
   where
     normalized = normalize NFC name
+
+-- | Vuelve a sellar la entrada con nonce nuevo; las demás no se tocan.
+replaceSecret :: MasterKey -> Text -> Text -> Vault -> IO (Either VaultError Vault)
+replaceSecret key name secret v = case locate key name v of
+  Left err -> pure (Left err)
+  Right (i, e) -> do
+    blob <- sealEntry key e {entrySecret = secret}
+    let (before, after) = splitAt i (vaultEntries v)
+    pure (Right v {vaultEntries = before ++ blob : drop 1 after})
+
+removeEntry :: MasterKey -> Text -> Vault -> Either VaultError Vault
+removeEntry key name v = do
+  (i, _) <- locate key name v
+  let (before, after) = splitAt i (vaultEntries v)
+  pure v {vaultEntries = before ++ drop 1 after}
+
+-- | Bóveda nueva (sal y verificación nuevas) con las mismas entradas selladas
+-- bajo la clave derivada de la maestra nueva.
+changeMaster :: MasterKey -> KdfParams -> Text -> Vault -> IO (Either VaultError (Vault, MasterKey))
+changeMaster key p password v = case entries key v of
+  Left err -> pure (Left err)
+  Right es -> do
+    created <- newVault p password
+    case created of
+      Left err -> pure (Left err)
+      Right (fresh, key') -> do
+        blobs <- mapM (sealEntry key') es
+        pure (Right (fresh {vaultEntries = blobs}, key'))
 
 instance ToJSON Entry where
   toJSON (Entry n s) = object ["name" .= n, "secret" .= s]

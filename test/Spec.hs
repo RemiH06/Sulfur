@@ -1,5 +1,6 @@
 module Main (main) where
 
+import Control.Exception (IOException, try)
 import Control.Monad (unless)
 import Data.Bits (complement)
 import Data.ByteString qualified as BS
@@ -8,6 +9,7 @@ import Data.Either (isLeft)
 import Data.Text qualified as T
 import Data.Text.Normalize (NormalizationMode (NFC, NFD), normalize)
 import Sulfur.Fingerprint
+import Sulfur.Password
 import Sulfur.Vault
 import System.Exit (exitFailure)
 import System.IO (hSetEncoding, stdout, utf8)
@@ -34,6 +36,15 @@ withOne e = do
   (v, k) <- fresh
   v1 <- addEntry k e v >>= either (fail . show) pure
   pure (v, k, v1)
+
+-- | Bóveda con la entrada dada más otra de nombre distinto, que es la que
+-- debe quedar intacta.
+withTwo :: Entry -> IO (Vault, MasterKey, Vault, Entry)
+withTwo e = do
+  (v, k, v1) <- withOne e
+  let other = Entry (normalize NFC (entryName e) <> T.pack "-otra") (T.pack "intacto")
+  v2 <- addEntry k other v1 >>= either (fail . show) pure
+  pure (v, k, v2, other)
 
 flipByte :: Int -> BS.ByteString -> BS.ByteString
 flipByte i b = let (pre, post) = BS.splitAt (i `mod` BS.length b) b in pre <> BS.map complement (BS.take 1 post) <> BS.drop 1 post
@@ -106,6 +117,43 @@ properties =
         (v, _) <- fresh
         let reread kdf = decodeVault (LBS.toStrict (encodeVault v {vaultKdf = kdf}))
         pure $ conjoin (map (isLeft . reread) [KdfParams 1 99999999 1, KdfParams 0 64 1, KdfParams 1 64 99])
+    )
+  , ( "bóveda: borrar quita solo esa entrada"
+    , withEntry $ \e -> ioProperty $ do
+        (_, k, v2, other) <- withTwo e
+        pure $
+          (removeEntry k (entryName e) v2 >>= entries k) === Right [other]
+            .&&. (entries k <$> removeEntry k (T.pack "no existe") v2) === Left (EntryNotFound (T.pack "no existe"))
+    )
+  , ( "bóveda: editar cambia solo ese secreto"
+    , withEntry $ \e -> ioProperty $ do
+        (_, k, v2, other) <- withTwo e
+        r <- replaceSecret k (entryName e) (T.pack "nuevo") v2
+        pure $ (r >>= entries k) === Right [Entry (normalize NFC (entryName e)) (T.pack "nuevo"), other]
+    )
+  , ( "bóveda: cambiar la maestra conserva las entradas y retira la anterior"
+    , withEntry $ \e -> ioProperty $ do
+        (_, k, v2, _) <- withTwo e
+        changed <- changeMaster k (KdfParams 1 64 1) (T.pack "maestra nueva de prueba") v2
+        pure $ case changed of
+          Left err -> counterexample (show err) False
+          Right (v', k') ->
+            entries k' v' === entries k v2
+              .&&. either (=== WrongPassword) (const (property False)) (unlock (T.pack "maestra de prueba") v')
+              .&&. either (const False) (const True) (unlock (T.pack "maestra nueva de prueba") v')
+    )
+  , ( "contraseña generada: longitud, alfabeto y todas las clases"
+    , forAll (choose (12, 128)) $ \n -> ioProperty $ do
+        p <- T.unpack <$> generatePassword n
+        pure $
+          length p === n
+            .&&. all (`elem` concat passwordClasses) p
+            .&&. all (any (`elem` p)) passwordClasses
+    )
+  , ( "contraseña generada: rechaza longitudes imposibles"
+    , once . ioProperty $ do
+        r <- try (generatePassword 3) :: IO (Either IOException T.Text)
+        pure (isLeft r)
     )
   ]
 

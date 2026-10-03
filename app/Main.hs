@@ -4,11 +4,12 @@ module Main (main) where
 
 import Control.Exception (finally)
 import Control.Monad (unless, when)
-import Data.List (sortOn)
+import Data.List (dropWhileEnd, sortOn)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Sulfur.Fingerprint
+import Sulfur.Password (generatePassword)
 import Sulfur.Vault
 import System.Console.Haskeline
 import System.Directory (XdgDirectory (XdgData), doesFileExist, getXdgDirectory)
@@ -17,13 +18,14 @@ import System.Exit (die)
 import System.FilePath ((</>))
 import System.IO
 import Text.Printf (printf)
+import Text.Read (readMaybe)
 #if defined(mingw32_HOST_OS)
 import System.Win32.Console (getConsoleOutputCP, setConsoleOutputCP)
 #endif
 
 main :: IO ()
 main = withUtf8Console $ do
-  mapM_ (`hSetEncoding` utf8) [stdout, stderr]
+  mapM_ (`hSetEncoding` utf8) [stdin, stdout, stderr]
   args <- getArgs
   case args of
     ["color", text] -> cmdColor (T.pack text)
@@ -31,15 +33,30 @@ main = withUtf8Console $ do
     ["add", name] -> cmdAdd (T.pack name)
     ["get", name] -> cmdGet (T.pack name)
     ["list"] -> cmdList
-    _ ->
-      die . unlines $
-        [ "Uso:"
-        , "  sulfur color \"<texto>\"   huella visual de un texto"
-        , "  sulfur init              crea la bóveda"
-        , "  sulfur add \"<nombre>\"    agrega una entrada"
-        , "  sulfur get \"<nombre>\"    muestra el secreto de una entrada"
-        , "  sulfur list              lista las entradas con su huella"
-        ]
+    ["gen", name] -> cmdGen (T.pack name) defaultLength
+    ["gen", name, len] -> maybe usage (cmdGen (T.pack name)) (readMaybe len)
+    ["edit", name] -> cmdEdit (T.pack name)
+    ["rm", name] -> cmdRemove (T.pack name)
+    ["passwd"] -> cmdPasswd
+    _ -> usage
+
+usage :: IO a
+usage =
+  die . unlines $
+    [ "Uso:"
+    , "  sulfur color \"<texto>\"             huella visual de un texto"
+    , "  sulfur init                        crea la bóveda"
+    , "  sulfur add \"<nombre>\"              agrega una entrada con un secreto tecleado"
+    , "  sulfur gen \"<nombre>\" [longitud]   genera el secreto (default " <> show defaultLength <> "); si existe, lo reemplaza"
+    , "  sulfur get \"<nombre>\"              muestra el secreto de una entrada"
+    , "  sulfur edit \"<nombre>\"             cambia el secreto por uno tecleado"
+    , "  sulfur rm \"<nombre>\"               borra una entrada"
+    , "  sulfur list                        lista las entradas con su huella"
+    , "  sulfur passwd                      cambia la contraseña maestra"
+    ]
+
+defaultLength :: Int
+defaultLength = 24
 
 -- | La consola de Windows usa por default una página de códigos de 8 bits
 -- (850 en español), que rompe acentos y cualquier Unicode. Se cambia a UTF-8
@@ -66,8 +83,7 @@ cmdInit = do
   path <- vaultPath
   exists <- doesFileExist path
   when exists $ die ("Ya existe una bóveda en " <> path)
-  password <- askNew "Contraseña maestra nueva: " "Repítela: "
-  when (T.length password < 12) $ die "La contraseña maestra debe tener al menos 12 caracteres."
+  password <- askNewMaster
   (v, _) <- newVault defaultKdf password >>= orDie
   saveVault path v
   putStrLn ("Bóveda creada en " <> path)
@@ -89,8 +105,55 @@ cmdGet name = do
   tty <- hIsTerminalDevice stdout
   unless tty $ die "get solo escribe en una terminal, nunca a un archivo o pipe."
   (_, v, key) <- openVault
-  found <- orDie (findEntry key name v)
-  maybe (die "No hay ninguna entrada con ese nombre.") (TIO.putStrLn . entrySecret) found
+  e <- orDie (lookupEntry key name v)
+  TIO.putStrLn (entrySecret e)
+
+-- | No muestra el secreto generado; para verlo, `get`.
+cmdGen :: Text -> Int -> IO ()
+cmdGen name len = do
+  when (T.null (T.strip name)) $ die "El nombre no puede estar vacío."
+  when (len < 12 || len > 128) $ die "La longitud debe estar entre 12 y 128."
+  (path, v, key) <- openVault
+  secret <- generatePassword len
+  v' <- case lookupEntry key name v of
+    Left (EntryNotFound _) -> addEntry key (Entry name secret) v >>= orDie
+    Left err -> die (describe err)
+    Right _ -> do
+      ok <- confirm (T.unpack name <> " ya existe. ¿Reemplazar su secreto por uno generado? [s/N] ")
+      unless ok $ die "Sin cambios."
+      replaceSecret key name secret v >>= orDie
+  saveVault path v'
+  tty <- hIsTerminalDevice stdout
+  putStrLn (entryLine tty name)
+
+cmdEdit :: Text -> IO ()
+cmdEdit name = do
+  (path, v, key) <- openVault
+  _ <- orDie (lookupEntry key name v)
+  secret <- askNew "Secreto nuevo: " "Repítelo: "
+  v' <- replaceSecret key name secret v >>= orDie
+  saveVault path v'
+  tty <- hIsTerminalDevice stdout
+  putStrLn (entryLine tty name)
+
+cmdRemove :: Text -> IO ()
+cmdRemove name = do
+  (path, v, key) <- openVault
+  v' <- orDie (removeEntry key name v)
+  ok <- confirm ("¿Borrar " <> T.unpack name <> "? No se puede deshacer. [s/N] ")
+  unless ok $ die "Sin cambios."
+  saveVault path v'
+  putStrLn ("Borrada: " <> T.unpack name)
+
+-- | Sal, verificación y parámetros de Argon2 nuevos; todas las entradas se
+-- vuelven a sellar.
+cmdPasswd :: IO ()
+cmdPasswd = do
+  (path, v, key) <- openVault
+  password <- askNewMaster
+  (v', _) <- changeMaster key defaultKdf password v >>= orDie
+  saveVault path v'
+  putStrLn "Contraseña maestra cambiada."
 
 cmdList :: IO ()
 cmdList = do
@@ -117,14 +180,25 @@ openVault = do
   key <- orDie (unlock password v)
   pure (path, v, key)
 
--- | Sin historial ni autocompletado: nada de lo que se teclea aquí se escribe
--- a disco.
-askSecret :: String -> IO Text
-askSecret label = do
-  answer <- runInputT settings (getPassword Nothing label)
-  maybe (die "Entrada cancelada.") (pure . T.pack) answer
+-- | Lee una línea. En una consola real usa haskeline, que lee Unicode con la
+-- API de Windows y puede ocultar lo tecleado; sin historial ni autocompletado,
+-- así que nada se escribe a disco. Si la entrada no es una consola (pipe,
+-- Git Bash), haskeline decodificaría con la página de códigos del sistema y
+-- una maestra con "ñ" daría otra clave, así que ahí se lee directo como UTF-8.
+readInput :: Bool -> String -> IO (Maybe String)
+readInput hidden label = do
+  console <- hIsTerminalDevice stdin
+  if console
+    then runInputT quiet ((if hidden then getPassword Nothing else getInputLine) label)
+    else do
+      putStr label >> hFlush stdout
+      eof <- hIsEOF stdin
+      if eof then pure Nothing else Just . dropWhileEnd (== '\r') <$> hGetLine stdin
   where
-    settings = Settings {complete = noCompletion, historyFile = Nothing, autoAddHistory = False}
+    quiet = Settings {complete = noCompletion, historyFile = Nothing, autoAddHistory = False}
+
+askSecret :: String -> IO Text
+askSecret label = readInput True label >>= maybe (die "Entrada cancelada.") (pure . T.pack)
 
 askNew :: String -> String -> IO Text
 askNew label confirmLabel = do
@@ -133,6 +207,17 @@ askNew label confirmLabel = do
   second <- askSecret confirmLabel
   unless (first == second) $ die "No coinciden."
   pure first
+
+askNewMaster :: IO Text
+askNewMaster = do
+  password <- askNew "Contraseña maestra nueva: " "Repítela: "
+  when (T.length password < 12) $ die "La contraseña maestra debe tener al menos 12 caracteres."
+  pure password
+
+confirm :: String -> IO Bool
+confirm question = do
+  answer <- readInput False question
+  pure (maybe False ((`elem` ["s", "si", "sí"]) . T.unpack . T.toLower . T.strip . T.pack) answer)
 
 orDie :: Either VaultError a -> IO a
 orDie = either (die . describe) pure
@@ -143,6 +228,7 @@ describe err = case err of
   TamperedEntry -> "Una entrada no pasó la verificación: el archivo fue alterado o está dañado."
   CorruptEntry -> "Una entrada se descifró pero su contenido no es válido."
   DuplicateName n -> "Ya existe una entrada llamada " <> T.unpack n <> "."
+  EntryNotFound n -> "No hay ninguna entrada llamada " <> T.unpack n <> "."
   InvalidFile e -> "El archivo de la bóveda no es válido: " <> e
   InvalidKdfParams -> "Parámetros de Argon2 inválidos."
 

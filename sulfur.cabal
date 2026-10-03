@@ -16,6 +16,7 @@ library
     hs-source-dirs:   src
     exposed-modules:
         Sulfur.Fingerprint
+        Sulfur.Password
         Sulfur.Vault
     build-depends:
         base >=4.17 && <5,
