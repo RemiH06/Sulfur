@@ -28,9 +28,9 @@ Reglas de seguridad:
 
 ## Plan Haskell
 
-- Build con cabal (`sulfur.cabal`), toolchain vía GHCup en `C:\ghcup`.
+- Build con cabal (`sulfur.cabal`), toolchain vía GHCup en `C:\ghcup`. Dependencias fijadas en `cabal.project.freeze` (incluye `base`, así que exige GHC 9.10.3); para actualizarlas, `cabal freeze --enable-tests` a propósito.
 - Huella (`src/Sulfur/Fingerprint.hs`), **congelada**: texto normalizado a NFC (`unicode-transforms`), en UTF-8, a SHA-256, a color OKLCH con luminosidad 0.45..0.85 y croma recortado a sRGB. Cambiarla cambia todos los colores ya memorizados; la prueba "valor de referencia" lo detecta. Imagen después (PNG vía JuicyPixels).
-- Bóveda (`src/Sulfur/Vault.hs`): archivo JSON (`aeson`). Clave con Argon2id (RFC 9106: 3 pasadas, 64 MiB, 4 carriles; los parámetros viven en el archivo y se acotan al leer). Cada entrada sella nombre y secreto juntos con XChaCha20-Poly1305 y nonce aleatorio propio, así que los nombres no se ven en disco. Un blob de verificación (texto vacío sellado) confirma la maestra aunque no haya entradas. AAD distinto para verificación y entradas. La huella nunca se guarda en disco: es un hash sin sal del nombre y lo delataría.
+- Bóveda (`src/Sulfur/Vault.hs`): archivo JSON (`aeson`). Clave con Argon2id (RFC 9106: 3 pasadas, 64 MiB, 4 carriles; los parámetros viven en el archivo y se acotan al leer). Cada entrada sella nombre y secreto juntos con XChaCha20-Poly1305 y nonce aleatorio propio, así que los nombres no se ven en disco. Formato versión 2: un índice sellado con el SHA-256 de cada blob en orden confirma la maestra aunque no haya entradas y detecta entradas borradas, reordenadas o reinsertadas desde una versión vieja; toda mutación pasa por `withBlobs`, que lo vuelve a sellar. AAD distinto para índice y entradas. La huella nunca se guarda en disco: es un hash sin sal del nombre y lo delataría.
 - Maestra y nombres se normalizan a NFC. Guardado atómico (temporal + renombrar).
 - `crypton` para las dos capas. Se descartó `saltine` porque exige la librería C de libsodium, incómoda en Windows.
 - CLI (`app/Main.hs`): `color`, `init`, `add`, `gen` (genera o reemplaza con confirmación), `get`, `edit`, `mv`, `rm` (con confirmación), `list`, `passwd` (sal, verificación y Argon2 nuevos; vuelve a sellar todo). Generador en `src/Sulfur/Password.hs`: 76 caracteres sin sesgo de módulo, al menos uno de cada clase, 24 por default. Entrada con `haskeline` sin historial solo si stdin es consola real; si no (pipe, Git Bash) se lee como UTF-8 y sin `\r`, porque haskeline decodificaría con la página de códigos del sistema y una maestra con "ñ" daría otra clave. Bóveda en `%APPDATA%\sulfur\vault.json` o donde diga `SULFUR_VAULT`. En Windows cambia la consola a UTF-8 mientras corre y la restaura al salir.
@@ -41,7 +41,7 @@ Reglas de seguridad:
 
 - `get` solo escribe a una terminal real. Alternativa: copiar al portapapeles (en Windows `clip.exe`, pero el historial del portapapeles puede retenerlo).
 - En Git Bash (mintty) la salida no cuenta como terminal, así que `get` se niega; en PowerShell, cmd y la terminal de VS Code sí funciona.
-- Sin protección contra reversión: quien tenga acceso al archivo puede restaurar una versión vieja o borrar entradas enteras sin que se detecte.
+- Reversión completa sin detectar: el índice atrapa entradas borradas, reordenadas o reinsertadas, pero restaurar el archivo entero a una versión vieja sigue siendo válido. Arreglarlo requiere un contador guardado fuera del archivo (si se pierde, la bóveda queda bloqueada).
 - Los `Text` con secretos no se borran de memoria al liberarse (limitación del GC de Haskell); solo la clave derivada vive en memoria que se borra.
 - La entrada por consola real (haskeline con la API Unicode de Windows) no se ha probado interactivamente; la de pipe sí.
 - Formato de salida de la imagen: tamaño, cuadrícula, degradado o sólido por zona.

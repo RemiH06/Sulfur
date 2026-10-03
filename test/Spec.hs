@@ -95,10 +95,26 @@ properties =
         (_, k, v1) <- withOne e
         pure $ entries k v1 {vaultEntries = map (flipByte i) (vaultEntries v1)} === Left TamperedEntry
     )
-  , ( "bóveda: el blob de verificación no pasa por entrada"
+  , ( "bóveda: el blob del índice no pasa por entrada"
     , once . ioProperty $ do
         (v, k) <- fresh
-        pure $ entries k v {vaultEntries = [vaultCheck v]} === Left TamperedEntry
+        pure $ entries k v {vaultEntries = [vaultIndex v]} === Left TamperedEntry
+    )
+  , ( "bóveda: quitar o reordenar blobs a mano se detecta"
+    , withEntry $ \e -> ioProperty $ do
+        (_, k, v2, _) <- withTwo e
+        let tampered blobs = entries k v2 {vaultEntries = blobs}
+        pure $
+          tampered (drop 1 (vaultEntries v2)) === Left TamperedIndex
+            .&&. tampered (reverse (vaultEntries v2)) === Left TamperedIndex
+            .&&. tampered [] === Left TamperedIndex
+    )
+  , ( "bóveda: reinsertar un blob viejo (secreto anterior) se detecta"
+    , withEntry $ \e -> ioProperty $ do
+        (_, k, v2, _) <- withTwo e
+        v3 <- replaceSecret k (entryName e) (T.pack "nuevo") v2 >>= either (fail . show) pure
+        let replayed = take 1 (vaultEntries v2) ++ drop 1 (vaultEntries v3)
+        pure $ entries k v3 {vaultEntries = replayed} === Left TamperedIndex
     )
   , ( "bóveda: rechaza nombres duplicados, también con otra forma Unicode"
     , once . ioProperty $ do
@@ -121,9 +137,11 @@ properties =
   , ( "bóveda: borrar quita solo esa entrada"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v2, other) <- withTwo e
+        removed <- removeEntry k (entryName e) v2
+        missing <- removeEntry k (T.pack "no existe") v2
         pure $
-          (removeEntry k (entryName e) v2 >>= entries k) === Right [other]
-            .&&. (entries k <$> removeEntry k (T.pack "no existe") v2) === Left (EntryNotFound (T.pack "no existe"))
+          (removed >>= entries k) === Right [other]
+            .&&. (entries k <$> missing) === Left (EntryNotFound (T.pack "no existe"))
     )
   , ( "bóveda: editar cambia solo ese secreto"
     , withEntry $ \e -> ioProperty $ do

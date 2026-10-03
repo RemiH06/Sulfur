@@ -141,7 +141,7 @@ cmdEdit name = do
 cmdRemove :: Text -> IO ()
 cmdRemove name = do
   (path, v, key) <- openVault
-  v' <- orDie (removeEntry key name v)
+  v' <- removeEntry key name v >>= orDie
   ok <- confirm ("¿Borrar " <> T.unpack name <> "? No se puede deshacer. [s/N] ")
   unless ok $ die "Sin cambios."
   saveVault path v'
@@ -239,6 +239,7 @@ describe :: VaultError -> String
 describe err = case err of
   WrongPassword -> "Contraseña maestra incorrecta."
   TamperedEntry -> "Una entrada no pasó la verificación: el archivo fue alterado o está dañado."
+  TamperedIndex -> "La lista de entradas no coincide con el índice: se borraron, reordenaron o reemplazaron entradas."
   CorruptEntry -> "Una entrada se descifró pero su contenido no es válido."
   DuplicateName n -> "Ya existe una entrada llamada " <> T.unpack n <> "."
   EntryNotFound n -> "No hay ninguna entrada llamada " <> T.unpack n <> "."

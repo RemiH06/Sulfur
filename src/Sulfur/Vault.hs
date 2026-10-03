@@ -29,6 +29,7 @@ module Sulfur.Vault
 import Control.Monad (unless, when)
 import Crypto.Cipher.ChaChaPoly1305 qualified as C
 import Crypto.Error (CryptoFailable (..), throwCryptoError)
+import Crypto.Hash (Digest, SHA256, hash)
 import Crypto.KDF.Argon2 qualified as Argon2
 import Crypto.MAC.Poly1305 qualified as Poly1305
 import Crypto.Random (getRandomBytes)
@@ -63,9 +64,11 @@ defaultKdf = KdfParams 3 65536 4
 data Vault = Vault
   { vaultKdf :: KdfParams
   , vaultSalt :: ByteString
-  , vaultCheck :: ByteString
-  -- ^ Texto vacío sellado: abrirlo confirma que la maestra es la correcta,
-  -- aunque la bóveda no tenga entradas todavía.
+  , vaultIndex :: ByteString
+  -- ^ SHA-256 de cada blob de entrada, en orden, sellado. Abrirlo confirma la
+  -- maestra aunque no haya entradas, y amarra la lista completa: borrar,
+  -- reordenar o reinsertar un blob viejo (válido, de la misma clave) deja de
+  -- coincidir.
   , vaultEntries :: [ByteString]
   }
   deriving (Eq, Show)
@@ -82,6 +85,7 @@ newtype MasterKey = MasterKey C.Key
 data VaultError
   = WrongPassword
   | TamperedEntry
+  | TamperedIndex
   | CorruptEntry
   | DuplicateName Text
   | EntryNotFound Text
@@ -89,11 +93,11 @@ data VaultError
   | InvalidKdfParams
   deriving (Eq, Show)
 
--- Dato asociado distinto para la verificación y para las entradas, para que
--- un blob de un tipo no pueda hacerse pasar por el otro.
-checkAad, entryAad :: ByteString
-checkAad = "sulfur-vault-v1-check"
-entryAad = "sulfur-vault-v1-entry"
+-- Dato asociado distinto para el índice y para las entradas, para que un blob
+-- de un tipo no pueda hacerse pasar por el otro.
+indexAad, entryAad :: ByteString
+indexAad = "sulfur-vault-v2-index"
+entryAad = "sulfur-vault-v2-entry"
 
 nonceLen, tagLen :: Int
 nonceLen = 24
@@ -136,22 +140,35 @@ open (MasterKey k) aad blob
     st = C.finalizeAAD (C.appendAAD aad (C.initializeX k (throwCryptoError (C.nonce24 nonceBytes))))
     (plain, st') = C.decrypt cipher st
 
+digestList :: [ByteString] -> ByteString
+digestList = BS.concat . map (\b -> BA.convert (hash b :: Digest SHA256))
+
+-- | Única forma de cambiar las entradas: siempre vuelve a sellar el índice.
+withBlobs :: MasterKey -> [ByteString] -> Vault -> IO Vault
+withBlobs key blobs v = do
+  index <- seal key indexAad (digestList blobs)
+  pure v {vaultIndex = index, vaultEntries = blobs}
+
 newVault :: KdfParams -> Text -> IO (Either VaultError (Vault, MasterKey))
 newVault p password = do
   salt <- getRandomBytes 16
   case deriveKey p salt password of
     Left err -> pure (Left err)
-    Right key -> do
-      check <- seal key checkAad ""
-      pure (Right (Vault p salt check [], key))
+    Right key -> Right . (,key) <$> withBlobs key [] (Vault p salt BS.empty [])
 
 unlock :: Text -> Vault -> Either VaultError MasterKey
 unlock password v = do
   key <- deriveKey (vaultKdf v) (vaultSalt v) password
-  maybe (Left WrongPassword) (const (Right key)) (open key checkAad (vaultCheck v))
+  maybe (Left WrongPassword) (const (Right key)) (open key indexAad (vaultIndex v))
 
+-- | Primero cada entrada (un byte alterado da 'TamperedEntry'), después el
+-- índice contra la lista tal como está ('TamperedIndex').
 entries :: MasterKey -> Vault -> Either VaultError [Entry]
-entries key = traverse openEntry . vaultEntries
+entries key v = do
+  es <- traverse openEntry (vaultEntries v)
+  case open key indexAad (vaultIndex v) of
+    Just digests | digests == digestList (vaultEntries v) -> Right es
+    _ -> Left TamperedIndex
   where
     openEntry blob = do
       plain <- maybe (Left TamperedEntry) Right (open key entryAad blob)
@@ -181,7 +198,7 @@ addEntry key (Entry name secret) v = case entries key v of
     | normalized `elem` map entryName existing -> pure (Left (DuplicateName normalized))
     | otherwise -> do
         blob <- sealEntry key (Entry normalized secret)
-        pure (Right v {vaultEntries = vaultEntries v ++ [blob]})
+        Right <$> withBlobs key (vaultEntries v ++ [blob]) v
   where
     normalized = normalize NFC name
 
@@ -192,7 +209,7 @@ replaceSecret key name secret v = case locate key name v of
   Right (i, e) -> do
     blob <- sealEntry key e {entrySecret = secret}
     let (before, after) = splitAt i (vaultEntries v)
-    pure (Right v {vaultEntries = before ++ blob : drop 1 after})
+    Right <$> withBlobs key (before ++ blob : drop 1 after) v
 
 -- | Vuelve a sellar la entrada con el nombre nuevo (en NFC) en la misma
 -- posición; el secreto no cambia.
@@ -204,17 +221,18 @@ renameEntry key old new v = case (,) <$> locate key old v <*> entries key v of
     | otherwise -> do
         blob <- sealEntry key e {entryName = normalized}
         let (before, after) = splitAt i (vaultEntries v)
-        pure (Right v {vaultEntries = before ++ blob : drop 1 after})
+        Right <$> withBlobs key (before ++ blob : drop 1 after) v
   where
     normalized = normalize NFC new
 
-removeEntry :: MasterKey -> Text -> Vault -> Either VaultError Vault
-removeEntry key name v = do
-  (i, _) <- locate key name v
-  let (before, after) = splitAt i (vaultEntries v)
-  pure v {vaultEntries = before ++ drop 1 after}
+removeEntry :: MasterKey -> Text -> Vault -> IO (Either VaultError Vault)
+removeEntry key name v = case locate key name v of
+  Left err -> pure (Left err)
+  Right (i, _) -> do
+    let (before, after) = splitAt i (vaultEntries v)
+    Right <$> withBlobs key (before ++ drop 1 after) v
 
--- | Bóveda nueva (sal y verificación nuevas) con las mismas entradas selladas
+-- | Bóveda nueva (sal e índice nuevos) con las mismas entradas selladas
 -- bajo la clave derivada de la maestra nueva.
 changeMaster :: MasterKey -> KdfParams -> Text -> Vault -> IO (Either VaultError (Vault, MasterKey))
 changeMaster key p password v = case entries key v of
@@ -225,7 +243,7 @@ changeMaster key p password v = case entries key v of
       Left err -> pure (Left err)
       Right (fresh, key') -> do
         blobs <- mapM (sealEntry key') es
-        pure (Right (fresh {vaultEntries = blobs}, key'))
+        Right . (,key') <$> withBlobs key' blobs fresh
 
 instance ToJSON Entry where
   toJSON (Entry n s) = object ["name" .= n, "secret" .= s]
@@ -236,7 +254,7 @@ instance FromJSON Entry where
 instance ToJSON Vault where
   toJSON v =
     object
-      [ "version" .= (1 :: Int)
+      [ "version" .= (2 :: Int)
       , "kdf"
           .= object
             [ "algorithm" .= ("argon2id" :: Text)
@@ -245,7 +263,7 @@ instance ToJSON Vault where
             , "parallelism" .= kdfParallelism (vaultKdf v)
             ]
       , "salt" .= b64 (vaultSalt v)
-      , "check" .= b64 (vaultCheck v)
+      , "index" .= b64 (vaultIndex v)
       , "entries" .= map b64 (vaultEntries v)
       ]
 
@@ -254,7 +272,8 @@ instance ToJSON Vault where
 instance FromJSON Vault where
   parseJSON = withObject "Vault" $ \o -> do
     version <- o .: "version"
-    unless (version == (1 :: Int)) $ fail "versión de bóveda no soportada"
+    when (version == (1 :: Int)) $ fail "formato 1, anterior al índice sellado: crea la bóveda de nuevo"
+    unless (version == 2) $ fail "versión de bóveda no soportada"
     kdf <- o .: "kdf"
     algorithm <- kdf .: "algorithm"
     unless (algorithm == ("argon2id" :: Text)) $ fail "algoritmo de derivación no soportado"
@@ -264,7 +283,7 @@ instance FromJSON Vault where
     when (kdfMemoryKiB p < 8 * kdfParallelism p || kdfMemoryKiB p > 4194304) $ fail "memoria fuera de rango"
     salt <- unb64 =<< o .: "salt"
     when (BS.length salt < 16) $ fail "sal demasiado corta"
-    Vault p salt <$> (unb64 =<< o .: "check") <*> (traverse unb64 =<< o .: "entries")
+    Vault p salt <$> (unb64 =<< o .: "index") <*> (traverse unb64 =<< o .: "entries")
 
 b64 :: ByteString -> Text
 b64 = decodeLatin1 . convertToBase Base64
