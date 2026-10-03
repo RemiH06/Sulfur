@@ -1,20 +1,77 @@
-![Made with Kotlin](https://forthebadge.com/images/badges/made-with-kotlin.svg)
+![Haskell](https://img.shields.io/badge/-Haskell-5D4F85?style=for-the-badge&logo=haskell&logoColor=white)
 
 ```ascii
-███████╗██╗   ██╗██╗     ███████╗██╗   ██╗██████╗ 
+███████╗██╗   ██╗██╗     ███████╗██╗   ██╗██████╗
 ██╔════╝██║   ██║██║     ██╔════╝██║   ██║██╔══██╗
 ███████╗██║   ██║██║     █████╗  ██║   ██║██████╔╝
 ╚════██║██║   ██║██║     ██╔══╝  ██║   ██║██╔══██╗
 ███████║╚██████╔╝███████╗██║     ╚██████╔╝██║  ██║
 ╚══════╝ ╚═════╝ ╚══════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝
 
-       by Hex (@RemiH06)          version 1.0
+       by Hex (@RemiH06)          version 2.0
 ```
 
-### General Description
+![GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)
 
-Just a weird algorithm I made for fun, it spits colors out of words
+## Resumen
+
+### Descripción general
+
+Sulfur convierte texto en color de forma determinista: el mismo texto siempre da el mismo color. Sobre esa idea está construyendo un gestor de contraseñas de línea de comandos, donde cada entrada se reconoce de un vistazo por su color.
+
+El proyecto separa dos capas que nunca se mezclan. La **huella visual** es pública: un color OKLCH derivado del SHA-256 del nombre de la entrada, sin ningún secreto de por medio. La **bóveda** es el cifrado real: la clave se deriva de la contraseña maestra con Argon2id y cada entrada (nombre y secreto juntos) se sella con XChaCha20-Poly1305 y un nonce aleatorio propio, así que el archivo no revela ni siquiera en qué servicios hay cuenta.
+
+La versión 1.0 era un experimento en Kotlin sin valor de seguridad. Se conserva como referencia en `legacy/kotlin/`.
+
+```diff
+- La bóveda no ha tenido revisión externa. No la uses con contraseñas reales todavía.
+- La huella visual no protege nada: cualquiera puede calcular el color de un nombre. Sirve para reconocer, no para autenticar.
+- No detecta si alguien restaura una versión vieja del archivo o borra entradas completas.
+```
+
+## Installation
+
+1. Instala la toolchain de Haskell con [GHCup](https://www.haskell.org/ghcup/) (GHC 9.10 y cabal 3.16 o posteriores).
+2. Compila y corre las pruebas:
+   ```bash
+   cabal build
+   cabal test
+   ```
+3. Instala el ejecutable en el `installdir` de cabal:
+   ```bash
+   cabal install exe:sulfur
+   ```
+
+## Launch arguments
+
+- `sulfur color "<texto>"` huella visual de cualquier texto, en hex y OKLCH.
+- `sulfur init` crea la bóveda; pide una contraseña maestra de al menos 12 caracteres.
+- `sulfur add "<nombre>"` agrega una entrada con un secreto tecleado.
+- `sulfur gen "<nombre>" [longitud]` genera el secreto (24 caracteres por default, de 12 a 128). Si la entrada existe, lo reemplaza tras confirmar.
+- `sulfur get "<nombre>"` muestra el secreto. Solo escribe a una terminal, nunca a un archivo o pipe.
+- `sulfur edit "<nombre>"` cambia el secreto por uno tecleado.
+- `sulfur mv "<nombre>" "<nuevo>"` renombra una entrada; su color cambia con el nombre.
+- `sulfur rm "<nombre>"` borra una entrada tras confirmar.
+- `sulfur list` lista las entradas con su huella.
+- `sulfur passwd` cambia la contraseña maestra y vuelve a cifrar todas las entradas.
+
+La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de datos del usuario en otros sistemas). La variable de entorno `SULFUR_VAULT` apunta a otra ruta.
 
 ## Features
 
-- Just creates colors out of words using sample formulas, it's not that complex bro
+- Huella determinista en OKLCH: el texto se normaliza a NFC, la luminosidad se mantiene entre 0.45 y 0.85 (nunca negro ni blanco puros) y el croma se recorta lo justo para caber en sRGB.
+- Argon2id con los parámetros recomendados por RFC 9106 (3 pasadas, 64 MiB, 4 carriles), guardados en el archivo y acotados al leerlo.
+- XChaCha20-Poly1305 por entrada: cualquier byte alterado se detecta y una entrada no puede moverse ni hacerse pasar por otra.
+- Generador de contraseñas sin sesgo de módulo, con al menos un carácter de cada clase.
+- Guardado atómico: un corte a medio guardar no deja la bóveda truncada.
+- Contraseñas leídas sin eco y sin historial; Unicode correcto en la consola de Windows.
+- Pruebas de propiedades con QuickCheck sobre la huella y la bóveda.
+
+## Future Features
+
+- Huella como imagen PNG.
+- Interfaz web, si se decide.
+
+## Autoría
+
+por Hex ([@RemiH06](https://github.com/RemiH06))

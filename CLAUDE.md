@@ -33,7 +33,7 @@ Reglas de seguridad:
 - Bóveda (`src/Sulfur/Vault.hs`): archivo JSON (`aeson`). Clave con Argon2id (RFC 9106: 3 pasadas, 64 MiB, 4 carriles; los parámetros viven en el archivo y se acotan al leer). Cada entrada sella nombre y secreto juntos con XChaCha20-Poly1305 y nonce aleatorio propio, así que los nombres no se ven en disco. Un blob de verificación (texto vacío sellado) confirma la maestra aunque no haya entradas. AAD distinto para verificación y entradas. La huella nunca se guarda en disco: es un hash sin sal del nombre y lo delataría.
 - Maestra y nombres se normalizan a NFC. Guardado atómico (temporal + renombrar).
 - `crypton` para las dos capas. Se descartó `saltine` porque exige la librería C de libsodium, incómoda en Windows.
-- CLI (`app/Main.hs`): `color`, `init`, `add`, `gen` (genera o reemplaza con confirmación), `get`, `edit`, `rm` (con confirmación), `list`, `passwd` (sal, verificación y Argon2 nuevos; vuelve a sellar todo). Generador en `src/Sulfur/Password.hs`: 76 caracteres sin sesgo de módulo, al menos uno de cada clase, 24 por default. Entrada con `haskeline` sin historial solo si stdin es consola real; si no (pipe, Git Bash) se lee como UTF-8 y sin `\r`, porque haskeline decodificaría con la página de códigos del sistema y una maestra con "ñ" daría otra clave. Bóveda en `%APPDATA%\sulfur\vault.json` o donde diga `SULFUR_VAULT`. En Windows cambia la consola a UTF-8 mientras corre y la restaura al salir.
+- CLI (`app/Main.hs`): `color`, `init`, `add`, `gen` (genera o reemplaza con confirmación), `get`, `edit`, `mv`, `rm` (con confirmación), `list`, `passwd` (sal, verificación y Argon2 nuevos; vuelve a sellar todo). Generador en `src/Sulfur/Password.hs`: 76 caracteres sin sesgo de módulo, al menos uno de cada clase, 24 por default. Entrada con `haskeline` sin historial solo si stdin es consola real; si no (pipe, Git Bash) se lee como UTF-8 y sin `\r`, porque haskeline decodificaría con la página de códigos del sistema y una maestra con "ñ" daría otra clave. Bóveda en `%APPDATA%\sulfur\vault.json` o donde diga `SULFUR_VAULT`. En Windows cambia la consola a UTF-8 mientras corre y la restaura al salir.
 - Pruebas con QuickCheck en `test/Spec.hs`: huella (gamut, rango, NFC, valor de referencia) y bóveda (ida y vuelta, maestra equivocada, nonces distintos, cualquier byte alterado, duplicados, JSON, parámetros abusivos).
 - Interfaz web después, si se decide.
 
@@ -43,7 +43,6 @@ Reglas de seguridad:
 - En Git Bash (mintty) la salida no cuenta como terminal, así que `get` se niega; en PowerShell, cmd y la terminal de VS Code sí funciona.
 - Sin protección contra reversión: quien tenga acceso al archivo puede restaurar una versión vieja o borrar entradas enteras sin que se detecte.
 - Los `Text` con secretos no se borran de memoria al liberarse (limitación del GC de Haskell); solo la clave derivada vive en memoria que se borra.
-- Falta renombrar entradas.
 - La entrada por consola real (haskeline con la API Unicode de Windows) no se ha probado interactivamente; la de pipe sí.
 - Formato de salida de la imagen: tamaño, cuadrícula, degradado o sólido por zona.
 - Si la huella visual se muestra en la bóveda de Obsidian o solo en el CLI.

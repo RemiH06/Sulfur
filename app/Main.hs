@@ -37,6 +37,7 @@ main = withUtf8Console $ do
     ["gen", name, len] -> maybe usage (cmdGen (T.pack name)) (readMaybe len)
     ["edit", name] -> cmdEdit (T.pack name)
     ["rm", name] -> cmdRemove (T.pack name)
+    ["mv", old, new] -> cmdRename (T.pack old) (T.pack new)
     ["passwd"] -> cmdPasswd
     _ -> usage
 
@@ -51,6 +52,7 @@ usage =
     , "  sulfur get \"<nombre>\"              muestra el secreto de una entrada"
     , "  sulfur edit \"<nombre>\"             cambia el secreto por uno tecleado"
     , "  sulfur rm \"<nombre>\"               borra una entrada"
+    , "  sulfur mv \"<nombre>\" \"<nuevo>\"     renombra una entrada (su huella cambia)"
     , "  sulfur list                        lista las entradas con su huella"
     , "  sulfur passwd                      cambia la contraseña maestra"
     ]
@@ -144,6 +146,17 @@ cmdRemove name = do
   unless ok $ die "Sin cambios."
   saveVault path v'
   putStrLn ("Borrada: " <> T.unpack name)
+
+-- | Muestra la huella anterior y la nueva: al cambiar el nombre cambia el color.
+cmdRename :: Text -> Text -> IO ()
+cmdRename old new = do
+  when (T.null (T.strip new)) $ die "El nombre no puede estar vacío."
+  (path, v, key) <- openVault
+  v' <- renameEntry key old new v >>= orDie
+  saveVault path v'
+  tty <- hIsTerminalDevice stdout
+  putStrLn (entryLine tty old)
+  putStrLn (entryLine tty new)
 
 -- | Sal, verificación y parámetros de Argon2 nuevos; todas las entradas se
 -- vuelven a sellar.

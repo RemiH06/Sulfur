@@ -17,6 +17,7 @@ module Sulfur.Vault
   , lookupEntry
   , addEntry
   , replaceSecret
+  , renameEntry
   , removeEntry
   , changeMaster
   , encodeVault
@@ -192,6 +193,20 @@ replaceSecret key name secret v = case locate key name v of
     blob <- sealEntry key e {entrySecret = secret}
     let (before, after) = splitAt i (vaultEntries v)
     pure (Right v {vaultEntries = before ++ blob : drop 1 after})
+
+-- | Vuelve a sellar la entrada con el nombre nuevo (en NFC) en la misma
+-- posición; el secreto no cambia.
+renameEntry :: MasterKey -> Text -> Text -> Vault -> IO (Either VaultError Vault)
+renameEntry key old new v = case (,) <$> locate key old v <*> entries key v of
+  Left err -> pure (Left err)
+  Right ((i, e), existing)
+    | normalized `elem` map entryName existing -> pure (Left (DuplicateName normalized))
+    | otherwise -> do
+        blob <- sealEntry key e {entryName = normalized}
+        let (before, after) = splitAt i (vaultEntries v)
+        pure (Right v {vaultEntries = before ++ blob : drop 1 after})
+  where
+    normalized = normalize NFC new
 
 removeEntry :: MasterKey -> Text -> Vault -> Either VaultError Vault
 removeEntry key name v = do

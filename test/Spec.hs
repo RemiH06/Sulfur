@@ -131,6 +131,18 @@ properties =
         r <- replaceSecret k (entryName e) (T.pack "nuevo") v2
         pure $ (r >>= entries k) === Right [Entry (normalize NFC (entryName e)) (T.pack "nuevo"), other]
     )
+  , ( "bóveda: renombrar conserva el secreto y la otra entrada"
+    , withEntry $ \e -> ioProperty $ do
+        (_, k, v2, other) <- withTwo e
+        let new = entryName other <> T.pack "-nueva"
+        renamed <- renameEntry k (entryName e) new v2
+        toOther <- renameEntry k (entryName e) (entryName other) v2
+        missing <- renameEntry k (T.pack "no existe") new v2
+        pure $
+          (renamed >>= entries k) === Right [Entry (normalize NFC new) (entrySecret e), other]
+            .&&. (entries k <$> toOther) === Left (DuplicateName (entryName other))
+            .&&. (entries k <$> missing) === Left (EntryNotFound (T.pack "no existe"))
+    )
   , ( "bóveda: cambiar la maestra conserva las entradas y retira la anterior"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v2, _) <- withTwo e
