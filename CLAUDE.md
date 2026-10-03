@@ -29,16 +29,21 @@ Reglas de seguridad:
 ## Plan Haskell
 
 - Build con cabal (`sulfur.cabal`), toolchain vía GHCup en `C:\ghcup`.
-- Núcleo puro en `src/Sulfur/`: texto normalizado a NFC (`unicode-transforms`), en UTF-8, a SHA-256, a color OKLCH con croma recortado a sRGB (`Fingerprint.hs`). Imagen después (PNG vía JuicyPixels).
-- Bóveda: archivo JSON (`aeson`) con cada entrada cifrada por separado, nonce aleatorio propio por entrada y el nombre de la entrada como dato asociado (AAD), para que mover un cifrado a otro nombre haga fallar el descifrado. La huella nunca se guarda en disco: se calcula al vuelo, porque es un hash sin sal del nombre y lo delataría.
-- `crypton` para las dos capas: SHA-256 de la huella y, en la bóveda, Argon2id + ChaCha20-Poly1305. Se descartó `saltine` porque exige la librería C de libsodium, incómoda en Windows.
-- Pruebas con QuickCheck en `test/Spec.hs`: dentro de sRGB, rango de luminosidad, nunca `#000`/`#fff`, más un valor fijo de referencia para detectar si el algoritmo cambia.
-- CLI primero (`sulfur "<nombre>"`). Interfaz web después, si se decide.
+- Huella (`src/Sulfur/Fingerprint.hs`), **congelada**: texto normalizado a NFC (`unicode-transforms`), en UTF-8, a SHA-256, a color OKLCH con luminosidad 0.45..0.85 y croma recortado a sRGB. Cambiarla cambia todos los colores ya memorizados; la prueba "valor de referencia" lo detecta. Imagen después (PNG vía JuicyPixels).
+- Bóveda (`src/Sulfur/Vault.hs`): archivo JSON (`aeson`). Clave con Argon2id (RFC 9106: 3 pasadas, 64 MiB, 4 carriles; los parámetros viven en el archivo y se acotan al leer). Cada entrada sella nombre y secreto juntos con XChaCha20-Poly1305 y nonce aleatorio propio, así que los nombres no se ven en disco. Un blob de verificación (texto vacío sellado) confirma la maestra aunque no haya entradas. AAD distinto para verificación y entradas. La huella nunca se guarda en disco: es un hash sin sal del nombre y lo delataría.
+- Maestra y nombres se normalizan a NFC. Guardado atómico (temporal + renombrar).
+- `crypton` para las dos capas. Se descartó `saltine` porque exige la librería C de libsodium, incómoda en Windows.
+- CLI (`app/Main.hs`): `color`, `init`, `add`, `get`, `list`. Contraseñas con `haskeline` sin historial. Bóveda en `%APPDATA%\sulfur\vault.json` o donde diga `SULFUR_VAULT`. En Windows cambia la consola a UTF-8 mientras corre y la restaura al salir.
+- Pruebas con QuickCheck en `test/Spec.hs`: huella (gamut, rango, NFC, valor de referencia) y bóveda (ida y vuelta, maestra equivocada, nonces distintos, cualquier byte alterado, duplicados, JSON, parámetros abusivos).
+- Interfaz web después, si se decide.
 
 ## Decisiones pendientes
 
+- `get` solo escribe a una terminal real. Alternativa: copiar al portapapeles (en Windows `clip.exe`, pero el historial del portapapeles puede retenerlo).
+- En Git Bash (mintty) la salida no cuenta como terminal, así que `get` se niega; en PowerShell, cmd y la terminal de VS Code sí funciona.
+- Sin protección contra reversión: quien tenga acceso al archivo puede restaurar una versión vieja o borrar entradas enteras sin que se detecte.
+- Los `Text` con secretos no se borran de memoria al liberarse (limitación del GC de Haskell); solo la clave derivada vive en memoria que se borra.
+- Faltan comandos: editar, borrar, renombrar entrada, cambiar la maestra, generar contraseñas.
 - Formato de salida de la imagen: tamaño, cuadrícula, degradado o sólido por zona.
-- Nombres de entrada cifrados (recomendado: no filtra en qué servicios hay cuenta) o en claro (`list` sin pedir la maestra).
 - Si la huella visual se muestra en la bóveda de Obsidian o solo en el CLI.
 - Contra qué fondo se mide el contraste mínimo de la huella (depende de dónde se muestre).
-- Cambiar el algoritmo de la huella cambia todos los colores ya memorizados: congelarlo antes de usarlo en serio.
