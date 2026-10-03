@@ -2,7 +2,7 @@ import java.math.BigDecimal
 import java.math.MathContext
 
 fun main() {
-    val password = "contrasena123"
+    val password = "Fry"
 
     if (password != null) {
         val asciiArray = password.toCharArray()

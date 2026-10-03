@@ -1,2 +1,9 @@
-Sulfur.iml
-.idea
+# IntelliJ / Kotlin 1.0
+.idea/
+*.iml
+out/
+*.jar
+
+# Haskell
+dist-newstyle/
+.stack-work/
