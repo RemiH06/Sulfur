@@ -20,6 +20,9 @@ module Sulfur.Vault
   , renameEntry
   , removeEntry
   , changeMaster
+  , addEntries
+  , pad
+  , unpad
   , encodeVault
   , decodeVault
   , loadVault
@@ -96,8 +99,26 @@ data VaultError
 -- Dato asociado distinto para el índice y para las entradas, para que un blob
 -- de un tipo no pueda hacerse pasar por el otro.
 indexAad, entryAad :: ByteString
-indexAad = "sulfur-vault-v2-index"
-entryAad = "sulfur-vault-v2-entry"
+indexAad = "sulfur-vault-v3-index"
+entryAad = "sulfur-vault-v3-entry"
+
+-- | El texto plano de cada entrada se lleva al siguiente múltiplo de 256
+-- bytes: las entradas comunes miden lo mismo en disco y el tamaño ya no delata
+-- la longitud de nombre y secreto.
+padBlock :: Int
+padBlock = 256
+
+-- | Relleno ISO/IEC 7816-4: un byte 0x80 y ceros hasta el múltiplo. Siempre
+-- agrega al menos un byte, así que quitarlo nunca es ambiguo.
+pad :: ByteString -> ByteString
+pad bs = bs <> BS.cons 0x80 (BS.replicate zeros 0)
+  where
+    zeros = (padBlock - (BS.length bs + 1) `mod` padBlock) `mod` padBlock
+
+unpad :: ByteString -> Maybe ByteString
+unpad bs = case BS.unsnoc (BS.dropWhileEnd (== 0) bs) of
+  Just (body, 0x80) -> Just body
+  _ -> Nothing
 
 nonceLen, tagLen :: Int
 nonceLen = 24
@@ -172,7 +193,7 @@ entries key v = do
   where
     openEntry blob = do
       plain <- maybe (Left TamperedEntry) Right (open key entryAad blob)
-      maybe (Left CorruptEntry) Right (decodeStrict plain)
+      maybe (Left CorruptEntry) Right (decodeStrict =<< unpad plain)
 
 -- | Posición del blob cuya entrada se llama así (comparando en NFC).
 locate :: MasterKey -> Text -> Vault -> Either VaultError (Int, Entry)
@@ -187,20 +208,27 @@ lookupEntry :: MasterKey -> Text -> Vault -> Either VaultError Entry
 lookupEntry key name v = snd <$> locate key name v
 
 sealEntry :: MasterKey -> Entry -> IO ByteString
-sealEntry key = seal key entryAad . LBS.toStrict . encode
+sealEntry key = seal key entryAad . pad . LBS.toStrict . encode
 
 -- | El nombre se guarda en NFC para que la búsqueda y la huella no dependan
 -- de cómo se escribió.
 addEntry :: MasterKey -> Entry -> Vault -> IO (Either VaultError Vault)
-addEntry key (Entry name secret) v = case entries key v of
+addEntry key e = addEntries key [e]
+
+-- | Todas o ninguna: un nombre repetido, contra la bóveda o dentro de la misma
+-- lista, cancela la operación completa.
+addEntries :: MasterKey -> [Entry] -> Vault -> IO (Either VaultError Vault)
+addEntries key new v = case entries key v of
   Left err -> pure (Left err)
-  Right existing
-    | normalized `elem` map entryName existing -> pure (Left (DuplicateName normalized))
-    | otherwise -> do
-        blob <- sealEntry key (Entry normalized secret)
-        Right <$> withBlobs key (vaultEntries v ++ [blob]) v
+  Right existing -> case firstDuplicate (map entryName (existing ++ normalized)) of
+    Just dup -> pure (Left (DuplicateName dup))
+    Nothing -> do
+      blobs <- mapM (sealEntry key) normalized
+      Right <$> withBlobs key (vaultEntries v ++ blobs) v
   where
-    normalized = normalize NFC name
+    normalized = [Entry (normalize NFC n) s | Entry n s <- new]
+    firstDuplicate [] = Nothing
+    firstDuplicate (x : xs) = if x `elem` xs then Just x else firstDuplicate xs
 
 -- | Vuelve a sellar la entrada con nonce nuevo; las demás no se tocan.
 replaceSecret :: MasterKey -> Text -> Text -> Vault -> IO (Either VaultError Vault)
@@ -254,7 +282,7 @@ instance FromJSON Entry where
 instance ToJSON Vault where
   toJSON v =
     object
-      [ "version" .= (2 :: Int)
+      [ "version" .= (3 :: Int)
       , "kdf"
           .= object
             [ "algorithm" .= ("argon2id" :: Text)
@@ -273,7 +301,8 @@ instance FromJSON Vault where
   parseJSON = withObject "Vault" $ \o -> do
     version <- o .: "version"
     when (version == (1 :: Int)) $ fail "formato 1, anterior al índice sellado: crea la bóveda de nuevo"
-    unless (version == 2) $ fail "versión de bóveda no soportada"
+    when (version == 2) $ fail "formato 2, anterior al relleno de longitud: crea la bóveda de nuevo"
+    unless (version == 3) $ fail "versión de bóveda no soportada"
     kdf <- o .: "kdf"
     algorithm <- kdf .: "algorithm"
     unless (algorithm == ("argon2id" :: Text)) $ fail "algoritmo de derivación no soportado"

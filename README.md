@@ -56,6 +56,7 @@ El diseño criptográfico, los adversarios considerados y las limitaciones conoc
 - `sulfur rm "<nombre>"` borra una entrada tras confirmar.
 - `sulfur list` lista las entradas con su huella.
 - `sulfur passwd` cambia la contraseña maestra y vuelve a cifrar todas las entradas.
+- `sulfur import "<archivo>"` carga muchas entradas de un archivo con una línea `nombre=secreto` por entrada (el secreto se toma literal, sin comillas). Importa todas o ninguna y al final ofrece borrar el archivo, que tiene los secretos en claro. Escríbelo fuera de carpetas sincronizadas o respaldadas.
 
 La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de datos del usuario en otros sistemas). La variable de entorno `SULFUR_VAULT` apunta a otra ruta.
 
@@ -64,6 +65,8 @@ La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de da
 - Huella determinista en OKLCH: el texto se normaliza a NFC, la luminosidad se mantiene entre 0.45 y 0.85 (nunca negro ni blanco puros) y el croma se recorta lo justo para caber en sRGB.
 - Argon2id con los parámetros recomendados por RFC 9106 (3 pasadas, 64 MiB, 4 carriles), guardados en el archivo y acotados al leerlo.
 - XChaCha20-Poly1305 por entrada: cualquier byte alterado se detecta y una entrada no puede moverse ni hacerse pasar por otra.
+- Índice sellado: borrar, reordenar o reinsertar entradas viejas en el archivo se detecta.
+- Relleno a bloques de 256 bytes: en disco, todas las entradas comunes miden lo mismo.
 - Generador de contraseñas sin sesgo de módulo, con al menos un carácter de cada clase.
 - Guardado atómico: un corte a medio guardar no deja la bóveda truncada.
 - Contraseñas leídas sin eco y sin historial; Unicode correcto en la consola de Windows.

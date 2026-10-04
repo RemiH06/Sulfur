@@ -16,6 +16,7 @@ library
     hs-source-dirs:   src
     exposed-modules:
         Sulfur.Fingerprint
+        Sulfur.Import
         Sulfur.Password
         Sulfur.Vault
     build-depends:
@@ -36,6 +37,7 @@ executable sulfur
     build-depends:
         base,
         sulfur,
+        bytestring,
         directory,
         filepath,
         haskeline >=0.8 && <0.9,

@@ -7,12 +7,15 @@ import Control.Monad (unless, when)
 import Data.List (dropWhileEnd, sortOn)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.ByteString qualified as BS
+import Data.Text.Encoding (decodeUtf8')
 import Data.Text.IO qualified as TIO
 import Sulfur.Fingerprint
+import Sulfur.Import (parseEntries)
 import Sulfur.Password (generatePassword)
 import Sulfur.Vault
 import System.Console.Haskeline
-import System.Directory (XdgDirectory (XdgData), doesFileExist, getXdgDirectory)
+import System.Directory (XdgDirectory (XdgData), doesFileExist, getXdgDirectory, removeFile)
 import System.Environment (getArgs, lookupEnv)
 import System.Exit (die)
 import System.FilePath ((</>))
@@ -39,6 +42,7 @@ main = withUtf8Console $ do
     ["rm", name] -> cmdRemove (T.pack name)
     ["mv", old, new] -> cmdRename (T.pack old) (T.pack new)
     ["passwd"] -> cmdPasswd
+    ["import", file] -> cmdImport file
     _ -> usage
 
 usage :: IO a
@@ -55,6 +59,7 @@ usage =
     , "  sulfur mv \"<nombre>\" \"<nuevo>\"     renombra una entrada (su huella cambia)"
     , "  sulfur list                        lista las entradas con su huella"
     , "  sulfur passwd                      cambia la contraseña maestra"
+    , "  sulfur import \"<archivo>\"          carga entradas nombre=secreto, una por línea"
     ]
 
 defaultLength :: Int
@@ -157,6 +162,27 @@ cmdRename old new = do
   tty <- hIsTerminalDevice stdout
   putStrLn (entryLine tty old)
   putStrLn (entryLine tty new)
+
+-- | Carga muchas entradas de un archivo `nombre=secreto`. El archivo se valida
+-- completo antes de pedir la maestra, se importan todas o ninguna, y al final
+-- ofrece borrarlo porque tiene los secretos en claro.
+cmdImport :: FilePath -> IO ()
+cmdImport file = do
+  exists <- doesFileExist file
+  unless exists $ die ("No existe " <> file)
+  content <- either (const (die (file <> " no está en UTF-8."))) pure . decodeUtf8' =<< BS.readFile file
+  new <- either (die . unlines . ("No se importó nada:" :)) pure (parseEntries content)
+  when (null new) $ die ("No hay entradas en " <> file)
+  (path, v, key) <- openVault
+  v' <- addEntries key new v >>= orDie
+  saveVault path v'
+  tty <- hIsTerminalDevice stdout
+  mapM_ (putStrLn . entryLine tty . entryName) new
+  putStrLn ("Importadas: " <> show (length new))
+  ok <- confirm ("¿Borrar " <> file <> "? Tiene los secretos en claro. [s/N] ")
+  if ok
+    then removeFile file >> putStrLn ("Borrado: " <> file)
+    else putStrLn ("Quedó en disco: " <> file <> ". Bórralo cuando termines.")
 
 -- | Sal, verificación y parámetros de Argon2 nuevos; todas las entradas se
 -- vuelven a sellar.

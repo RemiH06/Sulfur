@@ -2,7 +2,7 @@
 
 Documento para quien revise la seguridad de Sulfur antes de que se use con contraseñas reales. Describe qué protege la herramienta, contra quién, con qué primitivas y dónde están los límites conocidos, para que la revisión pueda ir directo al código en vez de reconstruir el diseño.
 
-Estado: versión 2.0 del CLI, formato de bóveda versión 2. Sin revisión externa todavía.
+Estado: versión 2.0 del CLI, formato de bóveda versión 3. Sin revisión externa todavía.
 
 ## Alcance
 
@@ -11,7 +11,7 @@ Sulfur es un gestor de contraseñas de línea de comandos para un solo usuario e
 1. **Huella visual** (`src/Sulfur/Fingerprint.hs`): color derivado del nombre de una entrada. Es pública por diseño y no protege nada.
 2. **Bóveda** (`src/Sulfur/Vault.hs`): archivo JSON con las entradas cifradas.
 
-El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Password.hs`. Las pruebas de propiedades que respaldan lo que se afirma aquí están en `test/Spec.hs`.
+El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Password.hs` y la lectura de archivos para `import` en `src/Sulfur/Import.hs`. Las pruebas de propiedades que respaldan lo que se afirma aquí están en `test/Spec.hs`.
 
 ## Activos
 
@@ -20,7 +20,8 @@ El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Pass
 | Secretos de las entradas | Cifrados en la bóveda; en claro solo en memoria y en la terminal al usar `get` | Alto |
 | Contraseña maestra | Solo la teclea el usuario; nunca se guarda | Alto |
 | Nombres de las entradas | Cifrados junto con el secreto | Medio: revelan en qué servicios hay cuenta |
-| Número de entradas y su tamaño | Visibles en el archivo | Bajo |
+| Número de entradas y su tamaño | Visibles en el archivo; el tamaño, en bloques de 256 bytes | Bajo |
+| Archivo de importación | Lo escribe el usuario con los secretos en claro; `import` ofrece borrarlo | Alto mientras exista |
 
 ## Adversarios
 
@@ -48,7 +49,8 @@ El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Pass
 - XChaCha20-Poly1305 (`Crypto.Cipher.ChaChaPoly1305`, `initializeX`).
 - Nonce de 24 bytes aleatorios por cada sellado, del generador del sistema operativo (`getRandomBytes` en IO llama a `getEntropy`; en Windows, `CryptGenRandom`). Con 192 bits, la colisión es despreciable aunque se reutilice la clave indefinidamente.
 - Texto plano de cada entrada: JSON `{"name": ..., "secret": ...}`. Nombre y secreto viajan juntos, así que el archivo no revela nombres.
-- Formato de cada blob: `nonce (24) ‖ cifrado ‖ tag (16)`, en base64 dentro del JSON.
+- Antes de sellar, el texto plano se rellena al siguiente múltiplo de 256 bytes con el esquema ISO/IEC 7816-4 (`0x80` y ceros; siempre agrega al menos un byte, así que quitarlo no es ambiguo). Un relleno inválido al abrir da `CorruptEntry`.
+- Formato de cada blob: `nonce (24) ‖ cifrado ‖ tag (16)`, en base64 dentro del JSON. Una entrada común mide 296 bytes.
 - La comparación del tag es de tiempo constante (`Eq` de `Poly1305.Auth` usa `constEq`). El texto descifrado solo se devuelve si el tag coincide (`open` en `Vault.hs`).
 
 ### Índice sellado
@@ -60,8 +62,15 @@ El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Pass
 
 ### Separación de dominios
 
-- AAD distinto para el índice (`sulfur-vault-v2-index`) y para las entradas (`sulfur-vault-v2-entry`), así un blob de un tipo no se acepta como el otro.
+- AAD distinto para el índice (`sulfur-vault-v3-index`) y para las entradas (`sulfur-vault-v3-entry`), así un blob de un tipo no se acepta como el otro.
 - Los campos del encabezado (versión, parámetros de Argon2, sal) no van en el AAD. Alterarlos cambia la clave derivada o hace fallar la lectura, así que el resultado es una bóveda que no abre, no una que abre con otro contenido.
+
+### Importación
+
+- `sulfur import <archivo>` lee líneas `nombre=secreto` en UTF-8 (tolera BOM y CRLF) y agrega todas las entradas en una sola escritura, o ninguna si hay un nombre repetido.
+- El archivo se valida completo antes de pedir la maestra. Los mensajes de error dan número de línea y nombre, nunca el secreto.
+- Al terminar ofrece borrar el archivo con `removeFile`. Eso no lo manda a la papelera, pero tampoco sobrescribe los bloques del disco: en SSD o con instantáneas del sistema, el contenido puede seguir siendo recuperable.
+- El `.gitignore` del repo excluye `.env`, `*.env` y `.env.*` para que el archivo no termine en git por accidente.
 
 ### Huella visual
 
@@ -70,7 +79,7 @@ El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Pass
 
 ## Qué se garantiza, por adversario
 
-**A1, lector del archivo.** Solo ve el número de entradas, el tamaño de cada blob, los parámetros de Argon2 y la sal. Para obtener cualquier nombre o secreto necesita la maestra, y cada intento cuesta una derivación Argon2id completa.
+**A1, lector del archivo.** Solo ve el número de entradas, el tamaño de cada blob en bloques de 256 bytes (todas las entradas comunes miden lo mismo), los parámetros de Argon2 y la sal. Para obtener cualquier nombre o secreto necesita la maestra, y cada intento cuesta una derivación Argon2id completa.
 
 **A2, escritor del archivo.**
 - Alterar cualquier byte de una entrada se detecta (`TamperedEntry`).
@@ -84,12 +93,13 @@ El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Pass
 
 1. **Reversión del archivo completo.** Restaurar `vault.json` entero a una versión anterior y válida no se detecta. Requiere un contador monotónico guardado fuera del archivo; está pendiente porque perder ese contador bloquearía la bóveda.
 2. **Las copias viejas siguen abriendo con la maestra vieja.** Después de `passwd`, cualquier respaldo previo de la bóveda se abre con la maestra anterior. Igual con entradas borradas o rotadas: siguen en los respaldos viejos.
-3. **Longitud visible.** El cifrado no agrega relleno, así que el tamaño de cada blob delata la longitud de nombre más secreto (más 23 bytes fijos de JSON y los escapes que haga falta). Mitigación propuesta: rellenar el texto plano a múltiplos de un tamaño fijo antes de sellar.
+3. **Longitud visible en bloques.** Con el relleno a 256 bytes, solo se distingue una entrada cuyo nombre más secreto pase de unos 230 bytes (los 23 bytes fijos del JSON cuentan), y aun así solo en saltos de 256.
 4. **Secretos en memoria.** Solo la clave derivada vive en memoria que se borra. Los secretos pasan por `String` y `Text`, que el recolector de basura de GHC no borra al liberar.
 5. **Historial de la terminal.** Lo que imprime `get` queda en el historial de desplazamiento de la terminal hasta que se limpie.
 6. **Entrada por pipe.** Si la entrada no es una consola, se lee como UTF-8 sin ocultar nada. Mandar la maestra con `echo` o similares la deja en el historial del shell; es responsabilidad de quien lo haga.
 7. **Git Bash (mintty).** No es una consola de Windows: las contraseñas se ven al teclear y `get` se niega a escribir.
 8. **Dependencias.** `crypton`, `ram`, `aeson` y las demás están fijadas en `cabal.project.freeze`, pero no se han auditado como parte de este proyecto.
+9. **Archivo de importación.** Mientras exista, tiene todos los secretos en claro. Borrarlo no garantiza que sea irrecuperable (ver "Importación").
 
 ## Preguntas concretas para la revisión
 
@@ -97,7 +107,7 @@ El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Pass
 2. ¿Es aceptable dejar el encabezado fuera del AAD, dado que alterarlo cambia la clave derivada? ¿Conviene autenticarlo de forma explícita?
 3. ¿Los límites de Argon2 al leer son razonables, tanto contra un archivo que pida demasiado como contra uno que pida muy poco?
 4. En `open`, el descifrado se evalúa de forma perezosa y el texto plano solo se devuelve si el tag coincide. ¿Hay alguna forma de que texto sin verificar salga del módulo?
-5. ¿Vale la pena el relleno de la limitación 3, y con qué tamaño de bloque?
+5. ¿Es adecuado el bloque de 256 bytes para el relleno, o conviene un esquema como Padmé que escale con el tamaño?
 6. ¿Algún riesgo en normalizar la maestra a NFC antes de derivar?
 
 ## Cómo reproducir las verificaciones
@@ -106,4 +116,4 @@ El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Pass
 cabal test --test-show-details=direct
 ```
 
-Las garantías de A1 y A2 tienen una propiedad en `test/Spec.hs`, con nombres en español: "la maestra correcta abre y otra no", "cualquier byte alterado se detecta", "quitar o reordenar blobs a mano se detecta", "reinsertar un blob viejo (secreto anterior) se detecta", "el blob del índice no pasa por entrada", "alterar parámetros o sal del encabezado no abre" y "rechaza parámetros de Argon2 abusivos al leer". Las de A3 dependen de la terminal y no tienen prueba automática.
+Las garantías de A1 y A2 tienen una propiedad en `test/Spec.hs`, con nombres en español: "la maestra correcta abre y otra no", "cualquier byte alterado se detecta", "quitar o reordenar blobs a mano se detecta", "reinsertar un blob viejo (secreto anterior) se detecta", "el blob del índice no pasa por entrada", "alterar parámetros o sal del encabezado no abre", "rechaza parámetros de Argon2 abusivos al leer", "entradas cortas y largas miden lo mismo en disco" y "relleno: ida y vuelta, múltiplo de 256 y siempre agrega algo". La importación tiene las suyas con prefijo "import:". Las de A3 dependen de la terminal y no tienen prueba automática.

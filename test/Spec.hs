@@ -6,9 +6,11 @@ import Data.Bits (complement)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Either (isLeft)
+import Data.List (isInfixOf)
 import Data.Text qualified as T
 import Data.Text.Normalize (NormalizationMode (NFC, NFD), normalize)
 import Sulfur.Fingerprint
+import Sulfur.Import
 import Sulfur.Password
 import Sulfur.Vault
 import System.Exit (exitFailure)
@@ -180,6 +182,54 @@ properties =
             entries k' v' === entries k v2
               .&&. either (=== WrongPassword) (const (property False)) (unlock (T.pack "maestra de prueba") v')
               .&&. either (const False) (const True) (unlock (T.pack "maestra nueva de prueba") v')
+    )
+  , ( "relleno: ida y vuelta, múltiplo de 256 y siempre agrega algo"
+    , forAll (BS.pack <$> arbitrary) $ \b ->
+        unpad (pad b) === Just b
+          .&&. BS.length (pad b) `mod` 256 === 0
+          .&&. BS.length (pad b) > BS.length b
+    )
+  , ( "relleno: rechaza lo que no termina en 0x80 y ceros"
+    , once $ map unpad [BS.empty, BS.replicate 256 0, BS.pack [0x41, 0x81, 0]] === [Nothing, Nothing, Nothing]
+    )
+  , ( "bóveda: entradas cortas y largas miden lo mismo en disco"
+    , once . ioProperty $ do
+        (v, k) <- fresh
+        r <- addEntries k [Entry (T.pack "a") (T.pack "x"), Entry (T.pack "un nombre más largo") (T.replicate 150 (T.pack "y"))] v
+        pure $ case r of
+          Left err -> counterexample (show err) False
+          Right v1 -> case map BS.length (vaultEntries v1) of
+            [l1, l2] -> l1 === l2
+            ls -> counterexample (show ls) False
+    )
+  , ( "bóveda: importar es todo o nada ante nombres repetidos"
+    , withEntry $ \e -> ioProperty $ do
+        (_, k, v1) <- withOne e
+        let nueva = Entry (normalize NFC (entryName e) <> T.pack "-nueva") (T.pack "z")
+        contraExistente <- addEntries k [nueva, e] v1
+        dentroDeLista <- addEntries k [nueva, nueva] v1
+        pure $
+          (entries k <$> contraExistente) === Left (DuplicateName (normalize NFC (entryName e)))
+            .&&. (entries k <$> dentroDeLista) === Left (DuplicateName (entryName nueva))
+    )
+  , ( "import: lee nombre=secreto con BOM, CRLF, comentarios y = en el secreto"
+    , once $
+        parseEntries (T.pack "\xfeffGmail personal=abc=def\r\n# comentario\r\n\r\n  banco = con espacios \r\n")
+          === Right [Entry (T.pack "Gmail personal") (T.pack "abc=def"), Entry (T.pack "banco") (T.pack " con espacios ")]
+    )
+  , ( "import: reporta cada línea mala sin repetir secretos"
+    , once $ case parseEntries (T.pack "sin igual\n=huerfano\nvacio=\ncomillas=\"s3cr3t0\"\nbien=ok\n") of
+        Right es -> counterexample (show es) False
+        Left errs ->
+          length errs === 4
+            .&&. map (takeWhile (/= ':')) errs === ["línea 1", "línea 2", "línea 3", "línea 4"]
+            .&&. not (any (\m -> "s3cr3t0" `isInfixOf` m || "huerfano" `isInfixOf` m) errs)
+    )
+  , ( "import: cualquier secreto de una línea se lee literal"
+    , forAll (T.pack . getUnicodeString <$> arbitrary) $ \s ->
+        let quoted = T.length s >= 2 && T.head s `elem` ['"', '\''] && T.head s == T.last s
+         in not (T.null s) && not (T.any (`elem` ['\n', '\r']) s) && not quoted ==>
+              parseEntries (T.pack "x=" <> s) === Right [Entry (T.pack "x") s]
     )
   , ( "contraseña generada: longitud, alfabeto y todas las clases"
     , forAll (choose (12, 128)) $ \n -> ioProperty $ do
