@@ -45,7 +45,6 @@ Reglas de seguridad:
 - Reversión completa sin detectar: el índice atrapa entradas borradas, reordenadas o reinsertadas, pero restaurar el archivo entero a una versión vieja sigue siendo válido. Arreglarlo requiere un contador guardado fuera del archivo (si se pierde, la bóveda queda bloqueada).
 - El tamaño de cada blob delata la longitud de nombre más secreto (sin relleno). Propuesta: rellenar a múltiplos fijos antes de sellar.
 - Los `Text` con secretos no se borran de memoria al liberarse (limitación del GC de Haskell); solo la clave derivada vive en memoria que se borra.
-- La entrada por consola real (haskeline con la API Unicode de Windows) no se ha probado interactivamente; la de pipe sí.
 - Formato de salida de la imagen: tamaño, cuadrícula, degradado o sólido por zona.
 - Si la huella visual se muestra en la bóveda de Obsidian o solo en el CLI.
 - Contra qué fondo se mide el contraste mínimo de la huella (depende de dónde se muestre).

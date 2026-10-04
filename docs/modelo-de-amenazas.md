@@ -78,7 +78,7 @@ El CLI está en `app/Main.hs` y el generador de contraseñas en `src/Sulfur/Pass
 - Bajar los parámetros de Argon2 no debilita nada: la clave cambia y la bóveda no abre.
 - Puede impedir el uso (borrar o corromper el archivo). La disponibilidad no está en alcance.
 
-**A3, observador de pantalla.** Las contraseñas se leen sin eco cuando la entrada es una consola real (`getPassword` de haskeline; pendiente de verificar en una sesión interactiva). `get` solo escribe a una terminal y se niega a escribir a un archivo o pipe.
+**A3, observador de pantalla.** Las contraseñas se leen sin eco cuando la entrada es una consola real (`getPassword` de haskeline; verificado a mano en PowerShell el 4 de octubre de 2026, junto con que una maestra con "ñ" tecleada y mandada por pipe dan la misma clave, y que la página de códigos de la consola se restaura aunque se cancele con Ctrl+C). `get` solo escribe a una terminal y se niega a escribir a un archivo o pipe.
 
 ## Limitaciones conocidas
 
