@@ -21,11 +21,15 @@ import Test.QuickCheck
 withText :: Testable p => (T.Text -> p) -> Property
 withText p = forAll (T.pack . getUnicodeString <$> arbitrary) p
 
--- | Entrada con nombre no vacío y secreto cualquiera, ambos Unicode.
+-- | Entrada con nombre no vacío, secreto cualquiera y, a veces, usuario y
+-- categoría, todo Unicode.
 withEntry :: Testable p => (Entry -> p) -> Property
 withEntry = forAll $ do
   name <- T.pack . getUnicodeString <$> arbitrary `suchThat` (not . null . getUnicodeString)
-  Entry name . T.pack . getUnicodeString <$> arbitrary
+  secret <- T.pack . getUnicodeString <$> arbitrary
+  login <- fmap (T.pack . getUnicodeString) <$> arbitrary
+  category <- fmap (T.pack . getUnicodeString) <$> arbitrary
+  pure (Entry name secret login category)
 
 -- | Argon2 al mínimo para que las pruebas no tarden; la seguridad de los
 -- parámetros reales no es lo que se prueba aquí.
@@ -44,7 +48,7 @@ withOne e = do
 withTwo :: Entry -> IO (Vault, MasterKey, Vault, Entry)
 withTwo e = do
   (v, k, v1) <- withOne e
-  let other = Entry (normalize NFC (entryName e) <> T.pack "-otra") (T.pack "intacto")
+  let other = newEntry (normalize NFC (entryName e) <> T.pack "-otra") (T.pack "intacto")
   v2 <- addEntry k other v1 >>= either (fail . show) pure
   pure (v, k, v2, other)
 
@@ -77,7 +81,7 @@ properties =
   , ( "bóveda: descifra lo que cifra, con el nombre en NFC"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v1) <- withOne e
-        pure $ entries k v1 === Right [e {entryName = normalize NFC (entryName e)}]
+        pure $ entries k v1 === Right [normalizeEntry e]
     )
   , ( "bóveda: la maestra correcta abre y otra no"
     , once . ioProperty $ do
@@ -129,7 +133,7 @@ properties =
     )
   , ( "bóveda: rechaza nombres duplicados, también con otra forma Unicode"
     , once . ioProperty $ do
-        let e = Entry (T.pack "\x00e9xito") (T.pack "uno")
+        let e = newEntry (T.pack "\x00e9xito") (T.pack "uno")
         (_, k, v1) <- withOne e
         r <- addEntry k e {entryName = T.pack "e\x0301xito"} v1
         pure $ r === Left (DuplicateName (T.pack "\x00e9xito"))
@@ -158,7 +162,7 @@ properties =
     , withEntry $ \e -> ioProperty $ do
         (_, k, v2, other) <- withTwo e
         r <- replaceSecret k (entryName e) (T.pack "nuevo") v2
-        pure $ (r >>= entries k) === Right [Entry (normalize NFC (entryName e)) (T.pack "nuevo"), other]
+        pure $ (r >>= entries k) === Right [(normalizeEntry e) {entrySecret = T.pack "nuevo"}, other]
     )
   , ( "bóveda: renombrar conserva el secreto y la otra entrada"
     , withEntry $ \e -> ioProperty $ do
@@ -168,9 +172,32 @@ properties =
         toOther <- renameEntry k (entryName e) (entryName other) v2
         missing <- renameEntry k (T.pack "no existe") new v2
         pure $
-          (renamed >>= entries k) === Right [Entry (normalize NFC new) (entrySecret e), other]
+          (renamed >>= entries k) === Right [(normalizeEntry e) {entryName = normalize NFC new}, other]
             .&&. (entries k <$> toOther) === Left (DuplicateName (entryName other))
             .&&. (entries k <$> missing) === Left (EntryNotFound (T.pack "no existe"))
+    )
+  , ( "bóveda: usuario y categoría se cambian y se borran sin tocar el secreto"
+    , withEntry $ \e -> ioProperty $ do
+        (_, k, v1) <- withOne e
+        let name = entryName e
+            step r f = either (pure . Left) f r
+        r <-
+          step (Right v1) (setLogin k name (Just (T.pack "  hex@correo.mx ")))
+            >>= (`step` setCategory k name (Just (T.pack "Trabajo")))
+        cleared <- step r (setLogin k name (Just (T.pack "   "))) >>= (`step` setCategory k name Nothing)
+        let base = normalizeEntry e
+        pure $
+          (r >>= entries k) === Right [base {entryLogin = Just (T.pack "hex@correo.mx"), entryCategory = Just (T.pack "Trabajo")}]
+            .&&. (cleared >>= entries k) === Right [base {entryLogin = Nothing, entryCategory = Nothing}]
+    )
+  , ( "categoría: el filtro ignora mayúsculas, espacios y forma Unicode"
+    , once $
+        let conCategoria c = (newEntry (T.pack "x") (T.pack "y")) {entryCategory = Just (T.pack c)}
+         in inCategory (T.pack "  TRABAJO ") (conCategoria "trabajo")
+              -- \& corta el escape: sin él, \x0301a se leería como U+301A.
+              .&&. inCategory (T.pack "Categori\x0301\&a") (conCategoria "Categor\x00ed\&a")
+              .&&. not (inCategory (T.pack "trabajo") (conCategoria "personal"))
+              .&&. not (inCategory (T.pack "trabajo") (newEntry (T.pack "x") (T.pack "y")))
     )
   , ( "bóveda: cambiar la maestra conserva las entradas y retira la anterior"
     , withEntry $ \e -> ioProperty $ do
@@ -195,7 +222,7 @@ properties =
   , ( "bóveda: entradas cortas y largas miden lo mismo en disco"
     , once . ioProperty $ do
         (v, k) <- fresh
-        r <- addEntries k [Entry (T.pack "a") (T.pack "x"), Entry (T.pack "un nombre más largo") (T.replicate 150 (T.pack "y"))] v
+        r <- addEntries k [newEntry (T.pack "a") (T.pack "x"), newEntry (T.pack "un nombre más largo") (T.replicate 150 (T.pack "y"))] v
         pure $ case r of
           Left err -> counterexample (show err) False
           Right v1 -> case map BS.length (vaultEntries v1) of
@@ -205,7 +232,7 @@ properties =
   , ( "bóveda: importar es todo o nada ante nombres repetidos"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v1) <- withOne e
-        let nueva = Entry (normalize NFC (entryName e) <> T.pack "-nueva") (T.pack "z")
+        let nueva = newEntry (normalize NFC (entryName e) <> T.pack "-nueva") (T.pack "z")
         contraExistente <- addEntries k [nueva, e] v1
         dentroDeLista <- addEntries k [nueva, nueva] v1
         pure $
@@ -215,7 +242,36 @@ properties =
   , ( "import: lee nombre=secreto con BOM, CRLF, comentarios y = en el secreto"
     , once $
         parseEntries (T.pack "\xfeffGmail personal=abc=def\r\n# comentario\r\n\r\n  banco = con espacios \r\n")
-          === Right [Entry (T.pack "Gmail personal") (T.pack "abc=def"), Entry (T.pack "banco") (T.pack " con espacios ")]
+          === Right [newEntry (T.pack "Gmail personal") (T.pack "abc=def"), newEntry (T.pack "banco") (T.pack " con espacios ")]
+    )
+  , ( "import: # solo es comentario al inicio de la línea, no dentro del secreto"
+    , once $
+        parseEntries (T.pack "user=#password\n  # comentario con espacios\nfiltro=a#b\n")
+          === Right [newEntry (T.pack "user") (T.pack "#password"), newEntry (T.pack "filtro") (T.pack "a#b")]
+    )
+  , ( "import: los encabezados [categoría | usuario] aplican hasta el siguiente"
+    , once $
+        parseEntries
+          ( T.pack $
+              unlines
+                [ "[personal | hex@gmail.com]"
+                , "Gmail=a"
+                , "[trabajo]"
+                , "Slack=b"
+                , "[ | otro@correo.mx ]"
+                , "X=c"
+                , "[]"
+                , "Y=d"
+                , "[x=y]"
+                ]
+          )
+          === Right
+            [ Entry (T.pack "Gmail") (T.pack "a") (Just (T.pack "hex@gmail.com")) (Just (T.pack "personal"))
+            , Entry (T.pack "Slack") (T.pack "b") Nothing (Just (T.pack "trabajo"))
+            , Entry (T.pack "X") (T.pack "c") (Just (T.pack "otro@correo.mx")) Nothing
+            , newEntry (T.pack "Y") (T.pack "d")
+            , newEntry (T.pack "[x") (T.pack "y]")
+            ]
     )
   , ( "import: reporta cada línea mala sin repetir secretos"
     , once $ case parseEntries (T.pack "sin igual\n=huerfano\nvacio=\ncomillas=\"s3cr3t0\"\nbien=ok\n") of
@@ -229,7 +285,7 @@ properties =
     , forAll (T.pack . getUnicodeString <$> arbitrary) $ \s ->
         let quoted = T.length s >= 2 && T.head s `elem` ['"', '\''] && T.head s == T.last s
          in not (T.null s) && not (T.any (`elem` ['\n', '\r']) s) && not quoted ==>
-              parseEntries (T.pack "x=" <> s) === Right [Entry (T.pack "x") s]
+              parseEntries (T.pack "x=" <> s) === Right [newEntry (T.pack "x") s]
     )
   , ( "contraseña generada: longitud, alfabeto y todas las clases"
     , forAll (choose (12, 128)) $ \n -> ioProperty $ do

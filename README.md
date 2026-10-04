@@ -54,9 +54,18 @@ El diseño criptográfico, los adversarios considerados y las limitaciones conoc
 - `sulfur edit "<nombre>"` cambia el secreto por uno tecleado.
 - `sulfur mv "<nombre>" "<nuevo>"` renombra una entrada; su color cambia con el nombre.
 - `sulfur rm "<nombre>"` borra una entrada tras confirmar.
-- `sulfur list` lista las entradas con su huella.
+- `sulfur list [categoría]` lista las entradas con su huella, categoría y usuario, agrupadas por categoría. Con una categoría, filtra (sin distinguir mayúsculas).
+- `sulfur set "<nombre>" usuario "<valor>"` y `sulfur set "<nombre>" categoria "<valor>"` cambian el correo o usuario y la categoría de una entrada; `""` los borra. `add` y `gen` los preguntan al crear una entrada, y se pueden dejar vacíos.
 - `sulfur passwd` cambia la contraseña maestra y vuelve a cifrar todas las entradas.
-- `sulfur import "<archivo>"` carga muchas entradas de un archivo con una línea `nombre=secreto` por entrada (el secreto se toma literal, sin comillas). Importa todas o ninguna y al final ofrece borrar el archivo, que tiene los secretos en claro. Escríbelo fuera de carpetas sincronizadas o respaldadas.
+- `sulfur import "<archivo>"` carga muchas entradas de un archivo con una línea `nombre=secreto` por entrada (el secreto se toma literal, sin comillas). Un encabezado `[categoría | correo]` aplica a las entradas de abajo hasta el siguiente. Importa todas o ninguna y al final ofrece borrar el archivo, que tiene los secretos en claro. Escríbelo fuera de carpetas sincronizadas o respaldadas, y no lo edites en VS Code (su historial local guarda copias).
+  ```
+  [personal | hex@gmail.com]
+  Gmail=mi contraseña
+  Spotify=otra
+
+  [trabajo | hex@empresa.com]
+  Slack=abc123
+  ```
 
 La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de datos del usuario en otros sistemas). La variable de entorno `SULFUR_VAULT` apunta a otra ruta.
 
@@ -67,6 +76,7 @@ La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de da
 - XChaCha20-Poly1305 por entrada: cualquier byte alterado se detecta y una entrada no puede moverse ni hacerse pasar por otra.
 - Índice sellado: borrar, reordenar o reinsertar entradas viejas en el archivo se detecta.
 - Relleno a bloques de 256 bytes: en disco, todas las entradas comunes miden lo mismo.
+- Categoría y correo o usuario por entrada, cifrados junto con el secreto.
 - Generador de contraseñas sin sesgo de módulo, con al menos un carácter de cada clase.
 - Guardado atómico: un corte a medio guardar no deja la bóveda truncada.
 - Contraseñas leídas sin eco y sin historial; Unicode correcto en la consola de Windows.

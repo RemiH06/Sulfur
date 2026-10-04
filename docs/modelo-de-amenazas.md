@@ -20,6 +20,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 | Secretos de las entradas | Cifrados en la bóveda; en claro solo en memoria y en la terminal al usar `get` | Alto |
 | Contraseña maestra | Solo la teclea el usuario; nunca se guarda | Alto |
 | Nombres de las entradas | Cifrados junto con el secreto | Medio: revelan en qué servicios hay cuenta |
+| Usuario o correo y categoría de cada entrada | Cifrados junto con el secreto; `list` los muestra en pantalla | Medio: revelan qué correo se usa en cada cuenta |
 | Número de entradas y su tamaño | Visibles en el archivo; el tamaño, en bloques de 256 bytes | Bajo |
 | Archivo de importación | Lo escribe el usuario con los secretos en claro; `import` ofrece borrarlo | Alto mientras exista |
 
@@ -48,7 +49,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 
 - XChaCha20-Poly1305 (`Crypto.Cipher.ChaChaPoly1305`, `initializeX`).
 - Nonce de 24 bytes aleatorios por cada sellado, del generador del sistema operativo (`getRandomBytes` en IO llama a `getEntropy`; en Windows, `CryptGenRandom`). Con 192 bits, la colisión es despreciable aunque se reutilice la clave indefinidamente.
-- Texto plano de cada entrada: JSON `{"name": ..., "secret": ...}`. Nombre y secreto viajan juntos, así que el archivo no revela nombres.
+- Texto plano de cada entrada: JSON `{"name": ..., "secret": ..., "login": ..., "category": ...}`, con `login` y `category` opcionales (se omiten si no hay). Todo viaja junto, así que el archivo no revela nombres, correos ni categorías.
 - Antes de sellar, el texto plano se rellena al siguiente múltiplo de 256 bytes con el esquema ISO/IEC 7816-4 (`0x80` y ceros; siempre agrega al menos un byte, así que quitarlo no es ambiguo). Un relleno inválido al abrir da `CorruptEntry`.
 - Formato de cada blob: `nonce (24) ‖ cifrado ‖ tag (16)`, en base64 dentro del JSON. Una entrada común mide 296 bytes.
 - La comparación del tag es de tiempo constante (`Eq` de `Poly1305.Auth` usa `constEq`). El texto descifrado solo se devuelve si el tag coincide (`open` en `Vault.hs`).
@@ -67,7 +68,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 
 ### Importación
 
-- `sulfur import <archivo>` lee líneas `nombre=secreto` en UTF-8 (tolera BOM y CRLF) y agrega todas las entradas en una sola escritura, o ninguna si hay un nombre repetido.
+- `sulfur import <archivo>` lee líneas `nombre=secreto` en UTF-8 (tolera BOM y CRLF), con encabezados opcionales `[categoría | usuario]` que aplican a las líneas de abajo, y agrega todas las entradas en una sola escritura, o ninguna si hay un nombre repetido.
 - El archivo se valida completo antes de pedir la maestra. Los mensajes de error dan número de línea y nombre, nunca el secreto.
 - Al terminar ofrece borrar el archivo con `removeFile`. Eso no lo manda a la papelera, pero tampoco sobrescribe los bloques del disco: en SSD o con instantáneas del sistema, el contenido puede seguir siendo recuperable.
 - El `.gitignore` del repo excluye `.env`, `*.env` y `.env.*` para que el archivo no termine en git por accidente.
@@ -87,7 +88,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 - Bajar los parámetros de Argon2 no debilita nada: la clave cambia y la bóveda no abre.
 - Puede impedir el uso (borrar o corromper el archivo). La disponibilidad no está en alcance.
 
-**A3, observador de pantalla.** Las contraseñas se leen sin eco cuando la entrada es una consola real (`getPassword` de haskeline; verificado a mano en PowerShell el 4 de octubre de 2026, junto con que una maestra con "ñ" tecleada y mandada por pipe dan la misma clave, y que la página de códigos de la consola se restaura aunque se cancele con Ctrl+C). `get` solo escribe a una terminal y se niega a escribir a un archivo o pipe.
+**A3, observador de pantalla.** Las contraseñas se leen sin eco cuando la entrada es una consola real (`getPassword` de haskeline; verificado a mano en PowerShell el 4 de octubre de 2026, junto con que una maestra con "ñ" tecleada y mandada por pipe dan la misma clave, y que la página de códigos de la consola se restaura aunque se cancele con Ctrl+C). `get` solo escribe a una terminal y se niega a escribir a un archivo o pipe. `list` sí muestra nombres, categorías y correos en pantalla (no secretos) y se puede redirigir.
 
 ## Limitaciones conocidas
 

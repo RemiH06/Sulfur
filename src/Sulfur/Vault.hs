@@ -7,6 +7,9 @@
 module Sulfur.Vault
   ( Vault (..)
   , Entry (..)
+  , newEntry
+  , normalizeEntry
+  , inCategory
   , KdfParams (..)
   , MasterKey
   , VaultError (..)
@@ -17,6 +20,8 @@ module Sulfur.Vault
   , lookupEntry
   , addEntry
   , replaceSecret
+  , setLogin
+  , setCategory
   , renameEntry
   , removeEntry
   , changeMaster
@@ -45,7 +50,9 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.List (find)
+import Data.Maybe (catMaybes)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Text.Encoding (decodeLatin1, encodeUtf8)
 import Data.Text.Normalize (NormalizationMode (NFC), normalize)
 import Data.Word (Word32)
@@ -76,11 +83,41 @@ data Vault = Vault
   }
   deriving (Eq, Show)
 
+-- | Usuario y categoría viajan cifrados con el resto: el archivo tampoco
+-- revela qué correo se usa en cada cuenta.
 data Entry = Entry
   { entryName :: Text
   , entrySecret :: Text
+  , entryLogin :: Maybe Text
+  -- ^ Correo o usuario con el que se entra a la cuenta.
+  , entryCategory :: Maybe Text
   }
   deriving (Eq, Show)
+
+newEntry :: Text -> Text -> Entry
+newEntry name secret = Entry name secret Nothing Nothing
+
+-- | Forma en que se guarda una entrada: nombre y categoría en NFC (para que
+-- buscar y filtrar no dependan de cómo se escribieron), usuario y categoría
+-- sin espacios a los lados, y vacío como ausente. El secreto no se toca.
+normalizeEntry :: Entry -> Entry
+normalizeEntry e =
+  e
+    { entryName = normalize NFC (entryName e)
+    , entryLogin = cleanMeta (entryLogin e)
+    , entryCategory = cleanMeta (entryCategory e)
+    }
+
+-- | Sin distinguir mayúsculas ni la forma Unicode en que se escribió.
+inCategory :: Text -> Entry -> Bool
+inCategory category e = (fold <$> cleanMeta (Just category)) == (fold <$> entryCategory e)
+  where
+    fold = T.toCaseFold . normalize NFC
+
+cleanMeta :: Maybe Text -> Maybe Text
+cleanMeta m = case normalize NFC . T.strip <$> m of
+  Just t | not (T.null t) -> Just t
+  _ -> Nothing
 
 -- | Clave de 32 bytes en memoria que se borra al liberarse. Opaca a propósito.
 newtype MasterKey = MasterKey C.Key
@@ -210,8 +247,7 @@ lookupEntry key name v = snd <$> locate key name v
 sealEntry :: MasterKey -> Entry -> IO ByteString
 sealEntry key = seal key entryAad . pad . LBS.toStrict . encode
 
--- | El nombre se guarda en NFC para que la búsqueda y la huella no dependan
--- de cómo se escribió.
+-- | Se guarda normalizada ('normalizeEntry').
 addEntry :: MasterKey -> Entry -> Vault -> IO (Either VaultError Vault)
 addEntry key e = addEntries key [e]
 
@@ -226,30 +262,35 @@ addEntries key new v = case entries key v of
       blobs <- mapM (sealEntry key) normalized
       Right <$> withBlobs key (vaultEntries v ++ blobs) v
   where
-    normalized = [Entry (normalize NFC n) s | Entry n s <- new]
+    normalized = map normalizeEntry new
     firstDuplicate [] = Nothing
     firstDuplicate (x : xs) = if x `elem` xs then Just x else firstDuplicate xs
 
--- | Vuelve a sellar la entrada con nonce nuevo; las demás no se tocan.
-replaceSecret :: MasterKey -> Text -> Text -> Vault -> IO (Either VaultError Vault)
-replaceSecret key name secret v = case locate key name v of
+-- | Vuelve a sellar, con nonce nuevo y en la misma posición, la entrada que se
+-- llama así; las demás no se tocan.
+modifyEntry :: MasterKey -> Text -> (Entry -> Entry) -> Vault -> IO (Either VaultError Vault)
+modifyEntry key name f v = case locate key name v of
   Left err -> pure (Left err)
   Right (i, e) -> do
-    blob <- sealEntry key e {entrySecret = secret}
+    blob <- sealEntry key (normalizeEntry (f e))
     let (before, after) = splitAt i (vaultEntries v)
     Right <$> withBlobs key (before ++ blob : drop 1 after) v
 
--- | Vuelve a sellar la entrada con el nombre nuevo (en NFC) en la misma
--- posición; el secreto no cambia.
+replaceSecret :: MasterKey -> Text -> Text -> Vault -> IO (Either VaultError Vault)
+replaceSecret key name secret = modifyEntry key name (\e -> e {entrySecret = secret})
+
+-- | 'Nothing' o texto vacío borra el dato.
+setLogin, setCategory :: MasterKey -> Text -> Maybe Text -> Vault -> IO (Either VaultError Vault)
+setLogin key name login = modifyEntry key name (\e -> e {entryLogin = login})
+setCategory key name category = modifyEntry key name (\e -> e {entryCategory = category})
+
+-- | El secreto, el usuario y la categoría no cambian.
 renameEntry :: MasterKey -> Text -> Text -> Vault -> IO (Either VaultError Vault)
-renameEntry key old new v = case (,) <$> locate key old v <*> entries key v of
+renameEntry key old new v = case entries key v of
   Left err -> pure (Left err)
-  Right ((i, e), existing)
+  Right existing
     | normalized `elem` map entryName existing -> pure (Left (DuplicateName normalized))
-    | otherwise -> do
-        blob <- sealEntry key e {entryName = normalized}
-        let (before, after) = splitAt i (vaultEntries v)
-        Right <$> withBlobs key (before ++ blob : drop 1 after) v
+    | otherwise -> modifyEntry key old (\e -> e {entryName = normalized}) v
   where
     normalized = normalize NFC new
 
@@ -273,11 +314,15 @@ changeMaster key p password v = case entries key v of
         blobs <- mapM (sealEntry key') es
         Right . (,key') <$> withBlobs key' blobs fresh
 
+-- | Usuario y categoría son opcionales y se omiten si no hay: las entradas
+-- guardadas antes de que existieran se siguen leyendo igual.
 instance ToJSON Entry where
-  toJSON (Entry n s) = object ["name" .= n, "secret" .= s]
+  toJSON (Entry n s l c) =
+    object (["name" .= n, "secret" .= s] ++ catMaybes [("login" .=) <$> l, ("category" .=) <$> c])
 
 instance FromJSON Entry where
-  parseJSON = withObject "Entry" $ \o -> Entry <$> o .: "name" <*> o .: "secret"
+  parseJSON = withObject "Entry" $ \o ->
+    Entry <$> o .: "name" <*> o .: "secret" <*> o .:? "login" <*> o .:? "category"
 
 instance ToJSON Vault where
   toJSON v =

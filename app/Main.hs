@@ -5,6 +5,7 @@ module Main (main) where
 import Control.Exception (finally)
 import Control.Monad (unless, when)
 import Data.List (dropWhileEnd, sortOn)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.ByteString qualified as BS
@@ -35,7 +36,9 @@ main = withUtf8Console $ do
     ["init"] -> cmdInit
     ["add", name] -> cmdAdd (T.pack name)
     ["get", name] -> cmdGet (T.pack name)
-    ["list"] -> cmdList
+    ["list"] -> cmdList Nothing
+    ["list", category] -> cmdList (Just (T.pack category))
+    ["set", name, field, value] -> cmdSet (T.pack name) field (T.pack value)
     ["gen", name] -> cmdGen (T.pack name) defaultLength
     ["gen", name, len] -> maybe usage (cmdGen (T.pack name)) (readMaybe len)
     ["edit", name] -> cmdEdit (T.pack name)
@@ -57,7 +60,9 @@ usage =
     , "  sulfur edit \"<nombre>\"             cambia el secreto por uno tecleado"
     , "  sulfur rm \"<nombre>\"               borra una entrada"
     , "  sulfur mv \"<nombre>\" \"<nuevo>\"     renombra una entrada (su huella cambia)"
-    , "  sulfur list                        lista las entradas con su huella"
+    , "  sulfur set \"<nombre>\" usuario \"<valor>\"     cambia el correo o usuario (\"\" lo borra)"
+    , "  sulfur set \"<nombre>\" categoria \"<valor>\"   cambia la categoría (\"\" la borra)"
+    , "  sulfur list [categoría]            lista las entradas con su huella, categoría y usuario"
     , "  sulfur passwd                      cambia la contraseña maestra"
     , "  sulfur import \"<archivo>\"          carga entradas nombre=secreto, una por línea"
     ]
@@ -100,7 +105,8 @@ cmdAdd name = do
   when (T.null (T.strip name)) $ die "El nombre no puede estar vacío."
   (path, v, key) <- openVault
   secret <- askNew "Secreto: " "Repítelo: "
-  v' <- addEntry key (Entry name secret) v >>= orDie
+  (login, category) <- askMeta
+  v' <- addEntry key (Entry name secret login category) v >>= orDie
   saveVault path v'
   tty <- hIsTerminalDevice stdout
   putStrLn (entryLine tty name)
@@ -123,7 +129,9 @@ cmdGen name len = do
   (path, v, key) <- openVault
   secret <- generatePassword len
   v' <- case lookupEntry key name v of
-    Left (EntryNotFound _) -> addEntry key (Entry name secret) v >>= orDie
+    Left (EntryNotFound _) -> do
+      (login, category) <- askMeta
+      addEntry key (Entry name secret login category) v >>= orDie
     Left err -> die (describe err)
     Right _ -> do
       ok <- confirm (T.unpack name <> " ya existe. ¿Reemplazar su secreto por uno generado? [s/N] ")
@@ -151,6 +159,18 @@ cmdRemove name = do
   unless ok $ die "Sin cambios."
   saveVault path v'
   putStrLn ("Borrada: " <> T.unpack name)
+
+cmdSet :: Text -> String -> Text -> IO ()
+cmdSet name field value = do
+  setter <- case field of
+    _ | field `elem` ["usuario", "correo"] -> pure setLogin
+    _ | field `elem` ["categoria", "categoría"] -> pure setCategory
+    _ -> die "El campo debe ser usuario o categoria."
+  (path, v, key) <- openVault
+  v' <- setter key name (Just value) v >>= orDie
+  saveVault path v'
+  tty <- hIsTerminalDevice stdout
+  putStrLn (entryLine tty name)
 
 -- | Muestra la huella anterior y la nueva: al cambiar el nombre cambia el color.
 cmdRename :: Text -> Text -> IO ()
@@ -194,13 +214,27 @@ cmdPasswd = do
   saveVault path v'
   putStrLn "Contraseña maestra cambiada."
 
-cmdList :: IO ()
-cmdList = do
+-- | Agrupa por categoría (las que no tienen van al final) y alinea columnas.
+cmdList :: Maybe Text -> IO ()
+cmdList only = do
   (_, v, key) <- openVault
   es <- orDie (entries key v)
   tty <- hIsTerminalDevice stdout
-  when (null es) $ putStrLn "La bóveda está vacía."
-  mapM_ (putStrLn . entryLine tty . entryName) (sortOn entryName es)
+  let shown = sortOn order (maybe id (filter . inCategory) only es)
+      order e = (isNothing (entryCategory e), T.toCaseFold <$> entryCategory e, T.toCaseFold (entryName e))
+      nameWidth = maximum (0 : map (T.length . entryName) shown)
+      tags = map (maybe T.empty (\c -> T.pack "[" <> c <> T.pack "]") . entryCategory) shown
+      tagWidth = maximum (0 : map T.length tags)
+      columns e tag =
+        [T.justifyLeft nameWidth ' ' (entryName e)]
+          ++ [T.justifyLeft tagWidth ' ' tag | tagWidth > 0]
+          ++ [fromMaybe T.empty (entryLogin e)]
+  when (null shown) $
+    putStrLn (maybe "La bóveda está vacía." (const "No hay entradas en esa categoría.") only)
+  sequence_
+    [ putStrLn (colorPrefix tty (entryName e) <> T.unpack (T.stripEnd (T.intercalate (T.pack "  ") (columns e tag))))
+    | (e, tag) <- zip shown tags
+    ]
 
 -- | SULFUR_VAULT permite apuntar a otra bóveda; por default vive en el
 -- directorio de datos del usuario (%APPDATA%\sulfur en Windows).
@@ -272,8 +306,18 @@ describe err = case err of
   InvalidFile e -> "El archivo de la bóveda no es válido: " <> e
   InvalidKdfParams -> "Parámetros de Argon2 inválidos."
 
+-- | Usuario y categoría son opcionales; Enter sin escribir los deja vacíos.
+askMeta :: IO (Maybe Text, Maybe Text)
+askMeta = do
+  login <- readInput False "Usuario o correo (opcional): "
+  category <- readInput False "Categoría (opcional): "
+  pure (T.pack <$> login, T.pack <$> category)
+
 entryLine :: Bool -> Text -> String
-entryLine tty name = swatch tty color <> toHex color <> "  " <> T.unpack name
+entryLine tty name = colorPrefix tty name <> T.unpack name
+
+colorPrefix :: Bool -> Text -> String
+colorPrefix tty name = swatch tty color <> toHex color <> "  "
   where
     color = fingerprint name
 
