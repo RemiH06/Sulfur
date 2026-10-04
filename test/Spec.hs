@@ -100,6 +100,15 @@ properties =
         (v, k) <- fresh
         pure $ entries k v {vaultEntries = [vaultIndex v]} === Left TamperedEntry
     )
+  , ( "bóveda: alterar parámetros o sal del encabezado no abre"
+    , once . ioProperty $ do
+        (v, _) <- fresh
+        let opensWith v' = either (=== WrongPassword) (const (property False)) (unlock (T.pack "maestra de prueba") v')
+        pure $
+          opensWith v {vaultKdf = KdfParams 1 32 1}
+            .&&. opensWith v {vaultKdf = KdfParams 2 64 1}
+            .&&. opensWith v {vaultSalt = flipByte 0 (vaultSalt v)}
+    )
   , ( "bóveda: quitar o reordenar blobs a mano se detecta"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v2, _) <- withTwo e

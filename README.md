@@ -26,8 +26,10 @@ La versión 1.0 era un experimento en Kotlin sin valor de seguridad. Se conserva
 ```diff
 - La bóveda no ha tenido revisión externa. No la uses con contraseñas reales todavía.
 - La huella visual no protege nada: cualquiera puede calcular el color de un nombre. Sirve para reconocer, no para autenticar.
-- No detecta si alguien restaura una versión vieja del archivo o borra entradas completas.
+- No detecta si alguien restaura el archivo completo a una versión anterior.
 ```
+
+El diseño criptográfico, los adversarios considerados y las limitaciones conocidas están en [docs/modelo-de-amenazas.md](docs/modelo-de-amenazas.md).
 
 ## Installation
 

@@ -35,6 +35,7 @@ Reglas de seguridad:
 - `crypton` para las dos capas. Se descartó `saltine` porque exige la librería C de libsodium, incómoda en Windows.
 - CLI (`app/Main.hs`): `color`, `init`, `add`, `gen` (genera o reemplaza con confirmación), `get`, `edit`, `mv`, `rm` (con confirmación), `list`, `passwd` (sal, verificación y Argon2 nuevos; vuelve a sellar todo). Generador en `src/Sulfur/Password.hs`: 76 caracteres sin sesgo de módulo, al menos uno de cada clase, 24 por default. Entrada con `haskeline` sin historial solo si stdin es consola real; si no (pipe, Git Bash) se lee como UTF-8 y sin `\r`, porque haskeline decodificaría con la página de códigos del sistema y una maestra con "ñ" daría otra clave. Bóveda en `%APPDATA%\sulfur\vault.json` o donde diga `SULFUR_VAULT`. En Windows cambia la consola a UTF-8 mientras corre y la restaura al salir.
 - Pruebas con QuickCheck en `test/Spec.hs`: huella (gamut, rango, NFC, valor de referencia) y bóveda (ida y vuelta, maestra equivocada, nonces distintos, cualquier byte alterado, duplicados, JSON, parámetros abusivos).
+- `docs/modelo-de-amenazas.md`: documento para la revisión externa. Mantenerlo al día cuando cambie el diseño criptográfico o el formato.
 - Interfaz web después, si se decide.
 
 ## Decisiones pendientes
@@ -42,6 +43,7 @@ Reglas de seguridad:
 - `get` solo escribe a una terminal real. Alternativa: copiar al portapapeles (en Windows `clip.exe`, pero el historial del portapapeles puede retenerlo).
 - En Git Bash (mintty) la salida no cuenta como terminal, así que `get` se niega; en PowerShell, cmd y la terminal de VS Code sí funciona.
 - Reversión completa sin detectar: el índice atrapa entradas borradas, reordenadas o reinsertadas, pero restaurar el archivo entero a una versión vieja sigue siendo válido. Arreglarlo requiere un contador guardado fuera del archivo (si se pierde, la bóveda queda bloqueada).
+- El tamaño de cada blob delata la longitud de nombre más secreto (sin relleno). Propuesta: rellenar a múltiplos fijos antes de sellar.
 - Los `Text` con secretos no se borran de memoria al liberarse (limitación del GC de Haskell); solo la clave derivada vive en memoria que se borra.
 - La entrada por consola real (haskeline con la API Unicode de Windows) no se ha probado interactivamente; la de pipe sí.
 - Formato de salida de la imagen: tamaño, cuadrícula, degradado o sólido por zona.
