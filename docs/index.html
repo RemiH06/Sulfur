@@ -3,9 +3,10 @@
 Sulfur · documentación · https://github.com/RemiH06/Sulfur
 Copyright (c) 2026 Hex (@RemiH06) · GPL-3.0 (ver LICENSE en el repo).
 
-Diseño: tema sherry de iroFactory (https://github.com/RemiH06/iroFactory, MIT),
-con la paleta cambiada al azufre. Partes de terceros en este archivo, con su
-propia licencia:
+Diseño: tema sherry de iroFactory (https://github.com/RemiH06/iroFactory, MIT)
+con la identidad de Sulfur: paleta del azufre y títulos en Doto. Las pestañas
+con consola que teclea vienen de shui-query-tabs (iroFactory). Partes de
+terceros en este archivo, con su propia licencia:
 
 · React Bits · https://github.com/DavidHDev/react-bits · David Haz (@DavidHDev)
   Componente portado: Pixel Card.
@@ -45,17 +46,19 @@ SOFTWARE.
 <link rel="canonical" href="https://remih06.github.io/Sulfur/">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.bunny.net">
-<link href="https://fonts.bunny.net/css?family=jetbrains-mono:400,700|vt323:400&display=swap" rel="stylesheet">
+<link href="https://fonts.bunny.net/css?family=jetbrains-mono:400,700|doto:700,900&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js');</script>
 <style>
 /* ── PALETA (skill colorimetría) ──
    Concepto: Kawah Ijen, el volcán donde el azufre se ve en todos sus
    estados · cristal amarillo (54°), la flama azul con que arde (218°),
    el lago ácido turquesa (172°) y el azufre fundido, de ámbar (30°) a
-   rojo sangre (352°). Regla: Custom, justificada por el material, no
-   por cercanía angular. Pasteles = mismos matices con menos saturación.
-   Identidad de sherry intacta: neón sobre casi negro, mono, CRT,
-   retícula de triángulos. Modo claro: mismos matices, luminosidad
-   bajada hasta pasar WCAG AA (4.5:1) como texto sobre --bg/--bg2/--bg3. */
+   rojo sangre (352°). Regla: Custom, justificada por el material.
+   Roles del sherry nuevo: acento = cristal (sherry: magenta), títulos y
+   código = flama (cian), prompt y cadenas = ámbar fundido (eléctrico),
+   éxito y números = lago (lima), peligro = rojo fundido. Un solo acento
+   en toda la página. Modo claro: mismos matices, luminosidad bajada
+   hasta pasar WCAG AA (4.5:1) sobre --bg/--bg2/--bg3. */
 body {
   --bg:      #080808;
   --bg2:     #0e0e0e;
@@ -72,23 +75,21 @@ body {
   --molten:  #FF4760;
   --citrine: #FAF19E;
   --sky:     #B1CCFB;
-  --foam:    #ADEBE2;
-  --amber:   #FAD1A8;
-  --coral:   #FBB1BB;
   --accent:  var(--sulfur);
-  --accent2: var(--flame);
   --ok:      var(--lake);
   --warn:    var(--ember);
   --danger:  var(--molten);
   --info:    var(--flame);
   --mono:    'JetBrains Mono', 'Fira Code', monospace;
-  --display: 'VT323', 'JetBrains Mono', monospace;
+  --display: 'Doto', 'JetBrains Mono', monospace;
   --radius:  2px;
-  --glow-sulfur: 0 0 8px rgba(255,232,26,.45);
-  --glow-flame:  0 0 8px rgba(71,139,255,.55);
-  --glow-lake:   0 0 8px rgba(29,237,209,.45);
-  --glow-ember:  0 0 8px rgba(255,148,41,.45);
-  --glow-molten: 0 0 8px rgba(255,71,96,.5);
+  --gutter:  clamp(20px, 5vw, 40px);
+  --section: clamp(44px, 7vw, 72px);
+  --glow-sulfur: 0 0 8px rgba(255,232,26,.5);
+  --glow-flame:  0 0 8px rgba(71,139,255,.6);
+  --glow-lake:   0 0 8px rgba(29,237,209,.5);
+  --glow-ember:  0 0 8px rgba(255,148,41,.5);
+  --glow-molten: 0 0 8px rgba(255,71,96,.55);
 }
 body.light {
   --bg:      #F5F2EC;
@@ -106,9 +107,6 @@ body.light {
   --molten:  #C4001A;
   --citrine: #686127;
   --sky:     #3C609F;
-  --foam:    #296B62;
-  --amber:   #805830;
-  --coral:   #A33E4B;
   --glow-sulfur: none;
   --glow-flame:  none;
   --glow-lake:   none;
@@ -118,598 +116,485 @@ body.light {
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
   background: var(--bg); color: var(--text);
   font-family: var(--mono); font-size: 13px; line-height: 1.7;
-  transition: background .25s, color .25s;
+  transition: background-color .25s ease, color .25s ease;
 }
 @keyframes sherry-blink { 0%,100%{opacity:1} 50%{opacity:0} }
-.cursor::after {
-  content: '█'; display: inline-block;
-  animation: sherry-blink 1s step-end infinite;
-  color: var(--accent); margin-left: 2px;
-}
-@media (prefers-reduced-motion: reduce) { .cursor::after { animation: none; } }
+.cursor::after { content: '█'; display: inline-block; animation: sherry-blink 1s step-end infinite; color: var(--accent); margin-left: 2px; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 0; }
 
-/* CRT y scanlines, igual que sherry */
+/* CRT y scanlines, como sherry */
 body.crt-on::after {
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
   background: repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, rgba(250,250,250,.03) 2px, rgba(250,250,250,.03) 4px);
 }
-body.light.crt-on::after {
-  background: repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, rgba(5,5,5,.015) 2px, rgba(5,5,5,.015) 4px);
-}
+body.light.crt-on::after { background: repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, rgba(5,5,5,.015) 2px, rgba(5,5,5,.015) 4px); }
 body.light::before {
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9998;
   background: repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, rgba(5,5,5,.018) 2px, rgba(5,5,5,.018) 4px);
 }
 
-/* Retícula de triángulos */
+/* Retícula de triángulos con destellos (sherry-triangle-neon-flash) */
 #tri-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 0; display: none; }
 body.tri-on #tri-canvas { display: block; }
 .page { position: relative; z-index: 1; }
 
-/* Controles fijos + título de esquina */
+/* Controles fijos y marca de esquina */
 .sherry-controls { position: fixed; top: 16px; right: 16px; z-index: 40; display: flex; gap: 8px; }
-.sherry-corner-title {
-  position: fixed; top: 18px; left: 18px; z-index: 40;
-  font-size: 15px; font-weight: 700; letter-spacing: -.5px;
+.corner {
+  position: fixed; top: 16px; left: 16px; z-index: 40; display: flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 700; letter-spacing: -.5px; text-decoration: none; color: var(--text);
   background: color-mix(in srgb, var(--bg2) 92%, transparent);
-  border: 1px solid var(--border2); border-radius: var(--radius); padding: 3px 8px;
-  opacity: 0; pointer-events: none; transition: opacity .1s linear;
+  border: 1px solid var(--border2); border-radius: var(--radius); padding: 3px 9px 3px 4px;
+  opacity: 0; pointer-events: none; transition: opacity .15s ease-out;
 }
+.corner.is-on { opacity: 1; pointer-events: auto; }
+.corner img { display: block; border-radius: 3px; }
 
-/* Portada: el banner del README con el degradado del volcán recortado
-   al texto (el mismo recurso que el título ASCII de sherry, sin WebGL). */
-.hero {
-  position: relative; min-height: 88vh; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; text-align: center; padding: 96px 24px 56px;
-}
-.banner {
-  /* El pre global (bloques de código) trae fondo, borde y padding; este
-     pre es el título, no código. Mismo reset que el título de sherry. */
-  margin: 0; padding: 0; border: none; background-color: transparent; overflow: visible;
-  font-family: var(--mono); font-size: min(2.35vw, 15px); line-height: 1.05; white-space: pre;
-  background-image: linear-gradient(100deg, var(--sulfur) 0%, var(--ember) 30%, var(--molten) 48%, var(--flame) 70%, var(--lake) 100%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  filter: drop-shadow(0 0 10px rgba(255,232,26,.18)); user-select: none;
-}
-body.light .banner { filter: none; font-weight: 700; }
-.hero-logo { display: block; margin-bottom: 22px; border-radius: 12px; }
-.hero h1 {
-  font-family: var(--display); font-weight: 400; font-size: clamp(22px, 4vw, 32px);
-  color: var(--text); margin-top: 28px; line-height: 1.2;
-}
-.hero .tagline { color: var(--text2); max-width: 620px; margin: 12px auto 0; }
-.hero .badges { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 20px; }
-.hero .ctas { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 22px; }
-.hero .hero-prompt { margin-top: 26px; color: var(--text2); }
-
-/* Niveles */
-.sherry-level { position: relative; padding: 56px 0; overflow: hidden; }
-.sherry-level.is-opaque { background: var(--bg2); border-top: 1px solid var(--border); }
-.sherry-level-wrap { max-width: 860px; margin: 0 auto; padding: 0 40px; position: relative; z-index: 2; }
-
-/* Tipografía de sherry */
+/* ── Tipografía ── Doto en títulos (matriz de puntos, como la pantalla de
+   una terminal vieja; trae acentos y eñe, así que no necesita respaldo). */
+h1, h2, h3 { font-family: var(--display); font-weight: 700; font-synthesis: none; }
 h2 {
-  font-family: var(--display); font-size: 26px; font-weight: 400; line-height: 1.1;
-  color: var(--flame); text-shadow: var(--glow-flame);
-  margin: 0 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--border2);
-  letter-spacing: .05em; text-transform: uppercase;
+  font-size: 30px; line-height: 1.15; color: var(--flame); text-shadow: var(--glow-flame);
+  margin: 0 0 16px; padding-bottom: 6px; border-bottom: 1px solid var(--border2); text-transform: uppercase;
 }
 h2::before { content: '// '; color: var(--text3); }
-h3 {
-  font-family: var(--display); font-size: 20px; font-weight: 400; line-height: 1.1;
-  color: var(--sulfur); text-shadow: var(--glow-sulfur);
-  margin: 26px 0 10px; letter-spacing: .05em;
-}
+h3 { font-size: 22px; line-height: 1.15; color: var(--accent); text-shadow: var(--glow-sulfur); margin: 26px 0 10px; }
 h3::before { content: '> '; color: var(--text3); }
-h4 { font-size: 12px; font-weight: 700; color: var(--citrine); margin-bottom: 4px; }
-p  { margin-bottom: 14px; line-height: 1.8; }
-p.muted { color: var(--text2); font-size: 12px; }
-ul.list { margin: 0 0 14px 18px; }
-ul.list li { margin-bottom: 6px; }
+h4 { font-size: 13px; font-weight: 700; color: var(--citrine); margin-bottom: 4px; }
+p { margin-bottom: 14px; line-height: 1.8; }
+p.muted { color: var(--text2); }
 strong { color: var(--text); }
 a { color: var(--accent); text-underline-offset: 3px; }
-.prompt::before { content: '$ '; color: var(--lake); text-shadow: var(--glow-lake); }
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 var(--gutter); position: relative; }
+section { position: relative; padding: var(--section) 0; scroll-margin-top: 64px; }
+section.is-opaque { background: var(--bg2); border-top: 1px solid var(--border); }
 
-/* Código y consola */
+/* ── Portada: cuatro elementos (título, subtítulo, CTA y el producto
+   funcionando). La consola de la derecha teclea `sulfur list` con la
+   salida real de la bóveda de demostración. */
+.hero { padding: clamp(84px, 12vw, 128px) 0 var(--section); }
+.hero .wrap { max-width: 1120px; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: clamp(28px, 4vw, 56px); align-items: center; }
+.hero h1 {
+  font-size: clamp(56px, 6.6vw, 92px); line-height: .9; font-weight: 900; color: var(--sulfur);
+  text-shadow: 0 0 18px rgba(255,232,26,.35); letter-spacing: -.02em;
+}
+body.light .hero h1 { text-shadow: none; }
+.hero .sub { font-size: 15px; color: var(--text2); max-width: 30em; margin: 18px 0 26px; }
+.hero .ctas { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+/* Consola */
+.console {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 13px; line-height: 1.75; color: var(--text2);
+  margin: 14px 0; overflow-x: auto; position: relative;
+}
+.is-opaque .console { background: var(--bg); }
+.console-bar {
+  display: flex; justify-content: space-between; gap: 12px; padding: 6px 12px;
+  border-bottom: 1px solid var(--border2); color: var(--text3); font-size: 12px;
+}
+.console pre { margin: 0; padding: 12px 16px 14px; font: inherit; white-space: pre; }
+/* Si una línea no cabe, la consola se desplaza de lado como cualquier
+   terminal; el desvanecido del borde avisa que hay más (lo pone el JS
+   solo cuando de verdad desborda, y se quita al llegar al final). */
+.console.is-cut { -webkit-mask-image: linear-gradient(90deg, #080808 calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, #080808 calc(100% - 44px), transparent); }
+.console .ln { display: block; min-height: 1.75em; }
+.console .ln.is-waiting { visibility: hidden; opacity: 0; }
+.console .ln.is-shown { transition: opacity .12s ease-out; }
+.console .ps { color: var(--ember); text-shadow: var(--glow-ember); }
+.console .cmd { color: var(--text); font-weight: 700; }
+.console .ask { color: var(--text3); }
+.console .typed { color: var(--accent); }
+.console .err { color: var(--molten); }
+.console .caret { display: inline-block; width: .6em; height: 1.15em; vertical-align: text-bottom; background: var(--accent); animation: sherry-blink 1s step-end infinite; }
+.hero .console { margin: 0; }
+.sw { display: inline-block; width: 1.9em; height: .95em; vertical-align: -1px; background: var(--c); border-radius: 1px; margin-right: .6em; }
+.file .k { color: var(--citrine); } .file .s { color: var(--ember); } .file .h { color: var(--flame); } .file .n { color: var(--lake); }
+
 code {
-  font-family: var(--mono); font-size: 12px;
-  background: var(--bg3); border: 1px solid var(--border2);
-  padding: 1px 5px; border-radius: var(--radius);
-  color: var(--flame); text-shadow: var(--glow-flame);
-}
-pre {
-  background: var(--bg2); border: 1px solid var(--border2);
-  border-left: 2px solid var(--accent); border-radius: var(--radius);
-  padding: 14px 18px; margin: 14px 0; overflow-x: auto;
-  font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--text); position: relative;
-}
-pre::before { content: attr(data-lang); position: absolute; top: 6px; right: 10px; font-size: 12px; color: var(--text3); }
-pre code { background: none; border: none; padding: 0; color: inherit; text-shadow: none; }
-.is-opaque pre { background: var(--bg); }
-pre.console { border-left-color: var(--lake); }
-pre.console .ps { color: var(--lake); text-shadow: var(--glow-lake); }
-pre.console .cmd { color: var(--text); font-weight: 700; }
-pre.console .out { color: var(--text2); }
-pre.console .ask { color: var(--text3); }
-pre.console .err { color: var(--molten); }
-pre.console .typed { color: var(--sulfur); }
-pre .cm  { color: var(--text3); font-style: italic; }
-pre .hd  { color: var(--ember); }
-pre .key { color: var(--citrine); }
-pre .str { color: var(--lake); }
-pre .num { color: var(--sulfur); }
-.sw {
-  display: inline-block; width: 1.9em; height: .95em; vertical-align: -1px;
-  background: var(--c); border-radius: 1px; margin-right: .6em;
+  font-family: var(--mono); font-size: max(12px, .92em); background: var(--bg3); border: 1px solid var(--border2);
+  padding: 1px 5px; border-radius: var(--radius); color: var(--flame);
 }
 
-/* Callouts */
-.callout {
-  border-left: 2px solid var(--accent); background: var(--bg2);
-  padding: 12px 16px; margin: 10px 0; border-radius: 0 var(--radius) var(--radius) 0;
-}
+/* Callouts: la franja lateral sí comunica (el color es la severidad). */
+.callout { border-left: 2px solid var(--accent); background: var(--bg2); padding: 12px 16px; margin: 14px 0; border-radius: 0 var(--radius) var(--radius) 0; }
 .is-opaque .callout { background: var(--bg); }
-.callout-title { font-size: 12px; font-weight: 700; color: var(--accent); text-shadow: var(--glow-sulfur); margin-bottom: 6px; }
+.callout-title { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
 .callout-title::before { content: '■ '; }
-.callout p { margin-bottom: 0; font-size: 12px; }
-.callout p + p { margin-top: 8px; }
-.callout.ok     { border-color: var(--ok); }     .callout.ok .callout-title     { color: var(--ok);     text-shadow: var(--glow-lake); }
-.callout.warn   { border-color: var(--warn); }   .callout.warn .callout-title   { color: var(--warn);   text-shadow: var(--glow-ember); }
-.callout.danger { border-color: var(--danger); } .callout.danger .callout-title { color: var(--danger); text-shadow: var(--glow-molten); }
-.callout.info   { border-color: var(--info); }   .callout.info .callout-title   { color: var(--info);   text-shadow: var(--glow-flame); }
+.callout p { margin: 0; }
+.callout.warn   { border-color: var(--warn); }   .callout.warn .callout-title   { color: var(--warn); }
+.callout.danger { border-color: var(--danger); } .callout.danger .callout-title { color: var(--danger); }
+.callout.info   { border-color: var(--info); }   .callout.info .callout-title   { color: var(--info); }
 
-/* Tabla */
-table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 12px; }
-th {
-  background: var(--bg3); padding: 7px 12px; text-align: left; font-size: 12px; font-weight: 700;
-  color: var(--flame); text-shadow: var(--glow-flame); border-bottom: 1px solid var(--border2);
-}
-td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text); }
-tr:hover td { background: var(--bg3); }
-td code { white-space: nowrap; }
-
-/* Botones y badges */
+/* Botones: un solo primario por vista. */
 .btn {
-  display: inline-block; font-family: var(--mono); font-size: 12px; font-weight: 700; text-decoration: none;
-  padding: 6px 14px; border: 1px solid var(--border2); border-radius: var(--radius);
-  background: var(--bg2); color: var(--text2); cursor: pointer; letter-spacing: .05em;
-  transition: color .15s ease-out, border-color .15s ease-out, text-shadow .15s ease-out, transform .16s ease-out;
+  display: inline-flex; align-items: center; min-height: 36px; font-family: var(--mono); font-size: 12px; font-weight: 700;
+  text-decoration: none; padding: 6px 14px; border: 1px solid var(--border2); border-radius: var(--radius);
+  background: var(--bg2); color: var(--text2); cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, transform .16s cubic-bezier(0.23, 1, 0.32, 1);
 }
-.btn:hover        { border-color: var(--accent); color: var(--accent); text-shadow: var(--glow-sulfur); }
-.btn.primary      { border-color: var(--accent); color: var(--accent); text-shadow: var(--glow-sulfur); }
-.btn.flame        { border-color: var(--flame);  color: var(--flame);  text-shadow: var(--glow-flame); }
-.btn:active, .theme-btn:active { transform: scale(.97); }
-.badge {
-  display: inline-block; font-family: var(--mono); font-size: 12px; font-weight: 700;
-  padding: 2px 7px; border: 1px solid var(--border2); border-radius: var(--radius);
-  background: var(--bg2); color: var(--text2);
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); min-height: 44px; padding: 8px 22px; font-size: 13px; }
+.btn.ghost { background: none; border-color: transparent; color: var(--text2); text-decoration: underline; text-underline-offset: 3px; }
+.btn:active { transform: scale(.97); }
+@media (hover: hover) and (pointer: fine) {
+  .btn:not(.primary):hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary:hover { box-shadow: var(--glow-sulfur); }
 }
-.badge.sulfur { border-color: var(--sulfur); color: var(--sulfur); text-shadow: var(--glow-sulfur); }
-.badge.flame  { border-color: var(--flame);  color: var(--flame);  text-shadow: var(--glow-flame); }
-.badge.lake   { border-color: var(--lake);   color: var(--lake);   text-shadow: var(--glow-lake); }
-.badge.ember  { border-color: var(--ember);  color: var(--ember);  text-shadow: var(--glow-ember); }
-.badge.molten { border-color: var(--molten); color: var(--molten); text-shadow: var(--glow-molten); }
-.theme-btn {
-  font-family: var(--mono); font-size: 12px; font-weight: 700;
-  padding: 5px 12px; background: var(--bg2); border: 1px solid var(--border2);
-  border-radius: var(--radius); color: var(--text2); cursor: pointer; letter-spacing: .05em;
-  transition: color .15s ease-out, border-color .15s ease-out, text-shadow .15s ease-out, transform .16s ease-out;
-}
-.theme-btn:hover { border-color: var(--accent); color: var(--accent); text-shadow: var(--glow-sulfur); }
-a:focus-visible, button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+a:focus-visible, button:focus-visible, input:focus-visible, [role="tab"]:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 
-/* Pasos y tarjetas */
-.step-row {
-  display: flex; gap: 14px; align-items: flex-start; margin: 12px 0; padding: 14px;
-  background: var(--bg2); border: 1px solid var(--border2);
-  border-left: 2px solid var(--accent); border-radius: var(--radius);
-}
-.is-opaque .step-row { background: var(--bg); }
-.step-row > div:not(.step-num) { min-width: 0; flex: 1; }
-.step-num { font-size: 18px; font-weight: 700; color: var(--accent); text-shadow: var(--glow-sulfur); min-width: 28px; line-height: 1; margin-top: 2px; }
-.step-row.flame { border-left-color: var(--flame); } .step-row.flame .step-num { color: var(--flame); text-shadow: var(--glow-flame); }
-.step-row.lake  { border-left-color: var(--lake); }  .step-row.lake .step-num  { color: var(--lake);  text-shadow: var(--glow-lake); }
-.step-row.ember { border-left-color: var(--ember); } .step-row.ember .step-num { color: var(--ember); text-shadow: var(--glow-ember); }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
-.card {
-  background: var(--bg2); border: 1px solid var(--border2);
-  border-radius: var(--radius); padding: 16px 18px; height: 100%;
-  transition: border-color .15s, box-shadow .15s;
-}
-.is-opaque .card { background: var(--bg); }
-.card:hover { border-color: var(--accent); box-shadow: var(--glow-sulfur); }
-.card .badge { margin-bottom: 10px; }
-
-/* Pixel Card (React Bits), capas como en sherry */
+/* Qué es: dos capas con Pixel Card (solo en estas dos, y solo con cursor). */
+.layers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0 4px; }
+.card { background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius); padding: 16px 18px; height: 100%; }
+.card .tag { display: inline-block; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.card.pub .tag { color: var(--sulfur); } .card.sec .tag { color: var(--flame); }
+.card p { margin: 0; color: var(--text2); }
 .sherry-pixel-card { position: relative; isolation: isolate; overflow: hidden; }
-.sherry-pixel-card:has(> .callout, > .step-row, > .card) { background: var(--bg2); }
-.is-opaque .sherry-pixel-card:has(> .callout, > .step-row, > .card) { background: var(--bg); }
+.sherry-pixel-card:has(> .card) { background: var(--bg2); }
 .sherry-pixel-card::before {
   content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(ellipse at center, var(--pc-glow, transparent), transparent 85%);
   opacity: 0; transition: opacity 800ms cubic-bezier(0.5, 1, 0.89, 1);
 }
-.sherry-pixel-card:hover::before, .sherry-pixel-card:focus-within::before { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .sherry-pixel-card:hover::before { opacity: 1; }
+  .sherry-pixel-card:hover .sherry-pc-content, .sherry-pixel-card:hover .sherry-pc-content * {
+    text-shadow: 0 0 1px var(--pc-halo), 0 0 3px var(--pc-halo), 0 0 6px var(--pc-halo), 0 0 10px var(--pc-halo);
+  }
+}
 .sherry-pc-canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; display: block; }
 .sherry-pixel-card > .sherry-pc-content { position: relative; z-index: 2; background: transparent; }
 .sherry-pc-content, .sherry-pc-content * { transition: text-shadow 600ms cubic-bezier(0.5, 1, 0.89, 1); }
-.sherry-pixel-card:hover .sherry-pc-content, .sherry-pixel-card:hover .sherry-pc-content *,
-.sherry-pixel-card:focus-within .sherry-pc-content, .sherry-pixel-card:focus-within .sherry-pc-content * {
-  text-shadow: 0 0 1px var(--pc-halo), 0 0 3px var(--pc-halo), 0 0 6px var(--pc-halo), 0 0 10px var(--pc-halo);
-}
 
-/* Prueba de la huella */
-.huella { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; margin: 16px 0; }
+/* Instalación: número de paso como marca, sin franja decorativa. */
+.steps { list-style: none; counter-reset: paso; display: grid; gap: 22px; margin-top: 8px; }
+.steps > li { counter-increment: paso; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 4px 14px; }
+.steps > li::before {
+  content: counter(paso, decimal-leading-zero); grid-row: span 3;
+  font-family: var(--display); font-weight: 900; font-size: 30px; line-height: 1; color: var(--accent); text-shadow: var(--glow-sulfur);
+}
+.steps p { margin: 0; color: var(--text2); }
+
+/* ── Uso: pestañas con consola que teclea (shui-query-tabs) ── */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 22px; }
+.tab {
+  font-family: var(--mono); font-size: 13px; font-weight: 700; min-height: 36px; padding: 6px 14px;
+  display: inline-flex; align-items: center; text-decoration: none; color: var(--text2);
+  background: var(--bg); border: 1px solid var(--border2); border-radius: var(--radius); cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background-color .15s ease, transform .16s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.tab:active { transform: scale(.97); }
+.tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+@media (hover: hover) and (pointer: fine) { .tab:not([aria-selected="true"]):hover { border-color: var(--accent); color: var(--accent); } }
+.panel { scroll-margin-top: 120px; }
+.panel > h3:first-child { margin-top: 0; }
+html:not(.js) .panel { padding-bottom: 28px; }
+
+table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+th { background: var(--bg3); padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 700; color: var(--flame); border-bottom: 1px solid var(--border2); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td:first-child { white-space: nowrap; }
+td code { white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
+
+/* Cifrado */
+.flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.flow > div { border-top: 2px solid var(--border2); padding-top: 12px; }
+.flow > div:nth-child(1) { border-top-color: var(--sulfur); }
+.flow > div:nth-child(2) { border-top-color: var(--flame); }
+.flow > div:nth-child(3) { border-top-color: var(--lake); }
+.flow p { margin: 0; color: var(--text2); }
+
+/* Huella */
+.huella { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: end; margin: 18px 0; }
 .huella label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
 .huella input {
-  width: 100%; font-family: var(--mono); font-size: 14px; color: var(--text);
-  background: var(--bg); border: 1px solid var(--border2); border-radius: var(--radius); padding: 10px 12px;
+  width: 100%; font-family: var(--mono); font-size: 16px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border2); border-radius: var(--radius); padding: 10px 12px; min-height: 44px;
 }
-.huella input:hover { border-color: var(--text3); }
-.huella-out { display: flex; align-items: center; gap: 14px; min-width: 260px; }
+.huella-out { display: flex; align-items: center; gap: 14px; }
 .huella-swatch { width: 96px; height: 64px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--bg3); flex-shrink: 0; }
-.huella-vals { font-size: 12px; line-height: 1.6; }
 .huella-vals .hex { font-size: 18px; font-weight: 700; color: var(--text); }
-.huella-vals .ok { color: var(--text2); }
+.huella-vals .ok { color: var(--text2); font-size: 12px; }
 
-hr.divider { border: none; border-top: 1px solid var(--border2); margin: 28px 0; }
-footer p { font-size: 12px; color: var(--text2); }
+footer { padding: 36px 0 48px; border-top: 1px solid var(--border); }
+footer p { font-size: 12px; color: var(--text2); margin: 0; }
+footer p::before { content: '$ '; color: var(--ember); }
 
-/* Vertical (celular) · frontend-design/references/responsive-portrait.md */
+.btn-ctl {
+  font-family: var(--mono); font-size: 12px; font-weight: 700; min-height: 32px; padding: 5px 12px;
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius); color: var(--text2); cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, transform .16s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.btn-ctl:active { transform: scale(.97); }
+@media (hover: hover) and (pointer: fine) { .btn-ctl:hover { border-color: var(--accent); color: var(--accent); } }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .cursor::after, .console .caret { animation: none; }
+  .btn, .tab, .btn-ctl, .console .ln.is-shown { transition: none; }
+}
+
+/* ── Vertical (celular) · responsive-portrait.md ── */
+@media (max-width: 860px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .flow { grid-template-columns: 1fr; }
+}
 @media (max-width: 760px) {
-  .sherry-level-wrap { padding: 0 20px; }
+  body { font-size: 16px; }
+  .console, table { font-size: 13px; }
+  .hero .sub { font-size: 17px; }
+  .layers, .huella { grid-template-columns: 1fr; }
   .sherry-controls { top: 10px; right: 10px; }
-  .sherry-corner-title { top: 12px; left: 12px; font-size: 13px; }
+  .corner { top: 10px; left: 10px; }
   .sherry-controls::before {
-    content: ""; position: fixed; left: 0; right: 0; top: 0; height: 52px; z-index: -1;
+    content: ""; position: fixed; left: 0; right: 0; top: 0; height: 54px; z-index: -1;
     background: color-mix(in srgb, var(--bg) 94%, transparent); border-bottom: 1px solid var(--border);
   }
-  .grid-2, .huella { grid-template-columns: 1fr; }
-  .huella-out { min-width: 0; }
-  .hero { min-height: 0; padding-top: 88px; }
-}
-@media (max-width: 760px), (pointer: coarse) {
-  .btn, .theme-btn, .badge, .callout-title, th, p.muted, pre::before, footer p { font-size: 12px; }
-  table { display: block; overflow-x: auto; }
-  .btn, .theme-btn { min-height: 32px; }
+  h2 { font-size: 26px; }
+  /* Las pestañas son una barra fija que acompaña al panel. */
+  .js .tabs {
+    position: sticky; top: 54px; z-index: 5; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin: 0 calc(-1 * var(--gutter)) 18px; padding: 10px var(--gutter);
+    background: color-mix(in srgb, var(--bg2) 96%, transparent); border-bottom: 1px solid var(--border);
+  }
+  .js .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; min-height: 40px; }
+  .steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+  .steps > li::before { font-size: 26px; }
 }
 </style>
 </head>
 <body class="tri-on">
 
 <div class="sherry-controls">
-  <button class="btn" type="button" onclick="toggleTri()" aria-label="Alternar fondo de triángulos" aria-pressed="true" id="tri-btn">tri</button>
-  <button class="btn" type="button" onclick="toggleCRT()" aria-label="Alternar líneas CRT" aria-pressed="true" id="crt-btn">crt</button>
-  <button class="theme-btn" type="button" id="toggle-btn" onclick="toggleTheme()" aria-label="Cambiar a modo claro">⬜ light</button>
+  <button class="btn-ctl" type="button" id="tri-btn" aria-pressed="true" aria-label="Alternar fondo de triángulos" onclick="toggleTri()">tri</button>
+  <button class="btn-ctl" type="button" id="crt-btn" aria-pressed="true" aria-label="Alternar líneas CRT" onclick="toggleCRT()">crt</button>
+  <button class="btn-ctl" type="button" id="toggle-btn" aria-label="Cambiar a modo claro" onclick="toggleTheme()">⬜ light</button>
 </div>
 
-<div class="sherry-corner-title" id="corner-title" aria-hidden="true">
-  sulfur<span style="color:var(--accent)">_</span><span class="cursor"></span>
-</div>
+<a class="corner" id="corner" href="#inicio" aria-label="Volver al inicio" tabindex="-1">
+  <img src="logo.svg" width="26" height="26" alt=""><span>sulfur<span style="color:var(--accent)">_</span><span class="cursor"></span></span>
+</a>
 
 <canvas id="tri-canvas" aria-hidden="true"></canvas>
 
 <div class="page">
 
 <header class="hero" id="inicio">
-<img class="hero-logo" src="logo.svg" width="72" height="72" alt="Símbolo alquímico del azufre: un triángulo amarillo sobre una cruz azul">
-<pre class="banner" aria-hidden="true">███████╗██╗   ██╗██╗     ███████╗██╗   ██╗██████╗
-██╔════╝██║   ██║██║     ██╔════╝██║   ██║██╔══██╗
-███████╗██║   ██║██║     █████╗  ██║   ██║██████╔╝
-╚════██║██║   ██║██║     ██╔══╝  ██║   ██║██╔══██╗
-███████║╚██████╔╝███████╗██║     ╚██████╔╝██║  ██║
-╚══════╝ ╚═════╝ ╚══════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝</pre>
-  <h1>Sulfur · gestor de contraseñas en la terminal</h1>
-  <p class="tagline">Tus contraseñas cifradas en un solo archivo, y un color por cuenta para reconocerla de un vistazo. Escrito en Haskell, sin servidores ni nube.</p>
-  <div class="badges">
-    <span class="badge sulfur">Haskell</span>
-    <span class="badge flame">Argon2id</span>
-    <span class="badge lake">XChaCha20-Poly1305</span>
-    <span class="badge ember">GPL-3.0</span>
+  <div class="wrap hero-grid">
+    <div>
+      <h1>SULFUR</h1>
+      <p class="sub">Gestor de contraseñas para la terminal. Cifrado real en un solo archivo y un color por cuenta para reconocerla.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#instalacion">instalar</a>
+        <a class="btn ghost" href="https://github.com/RemiH06/Sulfur">ver código</a>
+      </div>
+    </div>
+    <div class="console" data-type="load" aria-label="Ejemplo de sesión en la terminal">
+      <div class="console-bar" aria-hidden="true"><span>azufre.json</span><span>terminal</span></div>
+<pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur list</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln"><span class="sw" style="--c:#8493f5"></span>#8493f5  Banco    [finanzas]</span><span class="ln"><span class="sw" style="--c:#6843b1"></span>#6843b1  Gmail    [personal]  ana@example.com</span><span class="ln"><span class="sw" style="--c:#93b9a1"></span>#93b9a1  Spotify  [personal]  ana@example.com</span><span class="ln"><span class="sw" style="--c:#e0b0c6"></span>#e0b0c6  GitHub   [trabajo]   ana.trabajo@example.com</span><span class="ln"><span class="sw" style="--c:#65adf8"></span>#65adf8  Slack    [trabajo]   ana.trabajo@example.com</span></pre>
+    </div>
   </div>
-  <div class="ctas">
-    <a class="btn primary" href="#instalacion">instalar</a>
-    <a class="btn flame" href="https://github.com/RemiH06/Sulfur">repositorio</a>
-  </div>
-  <p class="hero-prompt prompt">sulfur copy netflix</p>
 </header>
 
-<section class="sherry-level" id="que-es">
-  <div class="sherry-level-wrap">
-    <div class="sherry-pixel-card"><div class="callout danger">
-      <div class="callout-title">Sin revisión externa todavía</div>
-      <p>Sulfur usa bibliotecas criptográficas revisadas y su diseño está documentado, pero el código no ha pasado por una auditoría independiente. Úsalo bajo tu propio criterio y conserva otra forma de recuperar tus cuentas.</p>
-    </div></div>
-
+<section class="is-opaque" id="que-es">
+  <div class="wrap">
     <h2>Qué es</h2>
-    <p>Sulfur guarda tus contraseñas en un archivo cifrado que vive en tu computadora. Lo abres con una sola contraseña maestra y lo manejas desde la terminal: agregar, generar, buscar, copiar al portapapeles. No hay cuenta, servidor ni sincronización: el archivo es tuyo y puedes respaldarlo donde quieras.</p>
-    <p>Tiene dos capas que nunca se mezclan:</p>
-    <div class="grid-2">
-      <div class="sherry-pixel-card"><div class="card">
-        <span class="badge sulfur">pública</span>
-        <h4>La huella</h4>
-        <p class="muted">Un color que sale del nombre de cada entrada. Siempre el mismo para el mismo nombre, en cualquier computadora. Sirve para reconocer de un vistazo; no protege nada y nunca se guarda en disco.</p>
+    <div class="callout danger">
+      <div class="callout-title">Sin revisión externa todavía</div>
+      <p>Usa bibliotecas criptográficas revisadas y su diseño está documentado, pero el código no ha pasado por una auditoría independiente. Úsalo bajo tu propio criterio y conserva otra forma de recuperar tus cuentas.</p>
+    </div>
+    <p>Sulfur guarda tus contraseñas en un archivo cifrado que vive en tu computadora. Lo abres con una sola contraseña maestra y lo manejas desde la terminal. No hay cuenta, servidor ni sincronización: el archivo es tuyo y lo respaldas donde quieras.</p>
+    <div class="layers">
+      <div class="sherry-pixel-card"><div class="card pub">
+        <span class="tag">la huella · pública</span>
+        <h4>Un color por nombre</h4>
+        <p>Sale del nombre de cada entrada: siempre el mismo, en cualquier computadora. Sirve para reconocer, no protege nada y nunca se guarda en disco.</p>
       </div></div>
-      <div class="sherry-pixel-card"><div class="card">
-        <span class="badge flame">secreta</span>
-        <h4>La bóveda</h4>
-        <p class="muted">Cifrado real: nombre, contraseña, correo y categoría de cada cuenta van sellados. Quien obtenga el archivo no ve ni en qué servicios tienes cuenta.</p>
+      <div class="sherry-pixel-card"><div class="card sec">
+        <span class="tag">la bóveda · secreta</span>
+        <h4>Todo sellado</h4>
+        <p>Nombre, contraseña, correo y categoría van cifrados juntos. Quien obtenga el archivo no ve ni en qué servicios tienes cuenta.</p>
       </div></div>
     </div>
   </div>
 </section>
 
-<section class="sherry-level is-opaque" id="instalacion">
-  <div class="sherry-level-wrap">
+<section id="instalacion">
+  <div class="wrap">
     <h2>Instalación</h2>
-    <div class="sherry-pixel-card"><div class="step-row">
-      <div class="step-num">01</div>
-      <div>
+    <ol class="steps">
+      <li>
         <h4>Windows: copia un solo archivo</h4>
-        <p class="muted"><code>sulfur.exe</code> solo depende de bibliotecas que trae cualquier Windows 10 u 11 de 64 bits. Ponlo en una carpeta que esté en tu PATH, por ejemplo <code>%USERPROFILE%\.local\bin</code>.</p>
-      </div>
-    </div></div>
-    <div class="sherry-pixel-card"><div class="step-row flame">
-      <div class="step-num">02</div>
-      <div>
+        <p><code>sulfur.exe</code> solo depende de bibliotecas que trae Windows 10 u 11 de 64 bits. Ponlo en una carpeta de tu PATH, por ejemplo <code>%USERPROFILE%\.local\bin</code>.</p>
+      </li>
+      <li>
         <h4>Linux, macOS o desde el código</h4>
-        <p class="muted">Instala <a href="https://www.haskell.org/ghcup/">GHCup</a> con GHC 9.10.3 y cabal, clona el repositorio y compila. Las versiones de todas las dependencias están fijadas, así que el build es reproducible.</p>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">cabal test</span>
-<span class="ps">$</span> <span class="cmd">cabal install exe:sulfur</span></pre>
+        <p>Con <a href="https://www.haskell.org/ghcup/">GHCup</a> (GHC 9.10.3 y cabal), clona el repositorio y compila. Las dependencias están fijadas, así que el build es reproducible.</p>
+        <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">cabal test</span></span><span class="ln"><span class="ps">$</span> <span class="cmd">cabal install exe:sulfur</span></span></pre></div>
+      </li>
+      <li>
+        <h4>Ponle nombre a tu bóveda</h4>
+        <p>Vive en <code>%APPDATA%\sulfur\vault.json</code> (en Linux y macOS, en tu directorio de datos). La variable <code>SULFUR_VAULT</code> apunta a otra ruta.</p>
+        <div class="console"><pre><span class="ln"><span class="ps">PS&gt;</span> <span class="cmd">[Environment]::SetEnvironmentVariable('SULFUR_VAULT', "$env:APPDATA\sulfur\azufre.json", 'User')</span></span></pre></div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="is-opaque" id="uso">
+  <div class="wrap">
+    <h2>Uso</h2>
+    <p class="muted">Salidas copiadas de la consola, de una bóveda de demostración con datos inventados. Lo que tecleas en los prompts de contraseña no se ve.</p>
+    <nav class="tabs" role="tablist" aria-label="Tareas">
+      <a class="tab" role="tab" id="tab-empezar" href="#empezar" aria-controls="empezar" aria-selected="true">empezar</a>
+      <a class="tab" role="tab" id="tab-importar" href="#importar" aria-controls="importar" aria-selected="false">importar</a>
+      <a class="tab" role="tab" id="tab-copiar" href="#copiar" aria-controls="copiar" aria-selected="false">copiar</a>
+      <a class="tab" role="tab" id="tab-buscar" href="#buscar" aria-controls="buscar" aria-selected="false">buscar</a>
+      <a class="tab" role="tab" id="tab-generar" href="#generar" aria-controls="generar" aria-selected="false">generar</a>
+      <a class="tab" role="tab" id="tab-cambiar" href="#cambiar" aria-controls="cambiar" aria-selected="false">cambiar</a>
+      <a class="tab" role="tab" id="tab-comandos" href="#comandos" aria-controls="comandos" aria-selected="false">todos</a>
+    </nav>
+
+    <div class="panel" id="empezar">
+      <h3>Crear la bóveda</h3>
+      <p>La maestra pide al menos 12 caracteres; cuatro o cinco palabras al azar funcionan bien. No hay forma de recuperarla si la olvidas.</p>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur init</span></span><span class="ln ask">Contraseña maestra nueva:</span><span class="ln ask">Repítela:</span><span class="ln">Bóveda creada en %APPDATA%\sulfur\azufre.json</span></pre></div>
+      <p>Luego agrega cuentas una por una con <code>add</code> o <code>gen</code>, o todas de una vez con <code>import</code>.</p>
+    </div>
+
+    <div class="panel" id="importar">
+      <h3>Importar tus cuentas de una vez</h3>
+      <p>Una línea <code>nombre=secreto</code> por cuenta. Un encabezado <code>[categoría | correo]</code> aplica a las líneas de abajo. El secreto se toma literal: puede llevar <code>=</code> o <code>#</code> y no va entre comillas.</p>
+      <div class="console file"><div class="console-bar" aria-hidden="true"><span>cuentas.env</span><span>archivo</span></div><pre><span class="ln h">[personal | ana@example.com]</span><span class="ln"><span class="k">Gmail</span>=<span class="s">lluvia-de-marzo-17</span></span><span class="ln"><span class="k">Spotify</span>=<span class="s">otra contraseña</span></span><span class="ln"> </span><span class="ln h">[trabajo | ana.trabajo@example.com]</span><span class="ln"><span class="k">Slack</span>=<span class="s">k7#Qp9vR2mXz</span></span><span class="ln"><span class="k">GitHub</span>=<span class="s">#password</span></span><span class="ln"> </span><span class="ln h">[finanzas]</span><span class="ln"><span class="k">Banco</span>=<span class="s">xyz-123-abc</span></span></pre></div>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur import cuentas.env</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln"><span class="sw" style="--c:#6843b1"></span>#6843b1  Gmail</span><span class="ln"><span class="sw" style="--c:#93b9a1"></span>#93b9a1  Spotify</span><span class="ln"><span class="sw" style="--c:#65adf8"></span>#65adf8  Slack</span><span class="ln"><span class="sw" style="--c:#e0b0c6"></span>#e0b0c6  GitHub</span><span class="ln"><span class="sw" style="--c:#8493f5"></span>#8493f5  Banco</span><span class="ln">Importadas: 5</span><span class="ln"><span class="ask">¿Borrar cuentas.env? Tiene los secretos en claro. [s/N]</span> <span class="typed">s</span></span><span class="ln">Borrado: cuentas.env</span></pre></div>
+      <p>El archivo se revisa completo antes de pedir la maestra. Si una línea está mal no se importa nada, y el error nunca repite el secreto:</p>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur import malo.env</span></span><span class="ln err">No se importó nada:</span><span class="ln err">línea 1: falta el signo =</span><span class="ln err">línea 2: el secreto de Facebook está entre comillas; quítalas si no son parte de la contraseña</span></pre></div>
+      <div class="callout warn">
+        <div class="callout-title">El archivo tiene tus secretos en claro</div>
+        <p>Créalo fuera de carpetas sincronizadas, acepta borrarlo al final y cierra la pestaña del editor. VS Code guarda copias en su historial local y el Bloc de notas de Windows 11 recuerda las pestañas abiertas.</p>
       </div>
-    </div></div>
-    <div class="sherry-pixel-card"><div class="step-row lake">
-      <div class="step-num">03</div>
-      <div>
-        <h4>Dónde vive la bóveda</h4>
-        <p class="muted">Por default en <code>%APPDATA%\sulfur\vault.json</code> (en Linux y macOS, el directorio de datos del usuario). La variable <code>SULFUR_VAULT</code> apunta a otra ruta; así puedes llamarla como quieras.</p>
-<pre class="console" data-lang="powershell"><span class="ps">PS&gt;</span> <span class="cmd">[Environment]::SetEnvironmentVariable('SULFUR_VAULT', "$env:APPDATA\sulfur\azufre.json", 'User')</span></pre>
-      </div>
-    </div></div>
+    </div>
+
+    <div class="panel" id="copiar">
+      <h3>Copiar sin que se vea</h3>
+      <p><code>copy</code> deja el secreto 30 segundos en el portapapeles, marcado para que Windows no lo guarde en el historial (Win+V) ni lo suba a la nube, y lo vacía al terminar o con Ctrl+C. Si copias otra cosa en ese tiempo, no la toca.</p>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur copy netflix</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln">Copiado Netflix (usuario: ana@example.com) Se borra en 30 s; Ctrl+C lo borra ya.</span><span class="ln">Portapapeles vaciado.</span></pre></div>
+      <p><code>get</code> imprime el secreto, pero solo en una terminal real: si lo rediriges, se niega.</p>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur get netflix &gt; salida.txt</span></span><span class="ln err">get solo escribe en una terminal, nunca a un archivo o pipe.</span></pre></div>
+    </div>
+
+    <div class="panel" id="buscar">
+      <h3>Sin el nombre exacto</h3>
+      <p>Busca el nombre tal cual, luego sin mayúsculas ni acentos, y al final cualquier entrada que lo contenga. Si quedan varias, pregunta. Funciona en <code>copy</code>, <code>get</code>, <code>edit</code>, <code>set</code>, <code>rm</code> y <code>mv</code>.</p>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur rm g</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln">1) <span class="sw" style="--c:#6843b1"></span>#6843b1  Gmail</span><span class="ln">2) <span class="sw" style="--c:#e0b0c6"></span>#e0b0c6  GitHub</span><span class="ln"><span class="ask">¿Cuál? [1-2]</span> <span class="typed">1</span></span><span class="ln"><span class="ask">¿Borrar Gmail? No se puede deshacer. [s/N]</span> <span class="typed">s</span></span><span class="ln">Borrada: Gmail</span></pre></div>
+      <p><code>list</code> con una categoría filtra; las categorías se guardan siempre en minúsculas.</p>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur list trabajo</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln"><span class="sw" style="--c:#e0b0c6"></span>#e0b0c6  GitHub  [trabajo]  ana.trabajo@example.com</span><span class="ln"><span class="sw" style="--c:#65adf8"></span>#65adf8  Slack   [trabajo]  ana.trabajo@example.com</span></pre></div>
+    </div>
+
+    <div class="panel" id="generar">
+      <h3>Contraseñas nuevas</h3>
+      <p><code>gen</code> crea 24 caracteres aleatorios (de 12 a 128 si le das otra longitud), sin espacios ni comillas, y no los muestra: para usarlos, <code>copy</code>. Si la cuenta existe, pregunta antes de reemplazar.</p>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur gen Netflix</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln"><span class="ask">Usuario o correo (opcional):</span> <span class="typed">ana@example.com</span></span><span class="ln"><span class="ask">Categoría (opcional):</span> <span class="typed">personal</span></span><span class="ln"><span class="sw" style="--c:#8f3779"></span>#8f3779  Netflix</span></pre></div>
+    </div>
+
+    <div class="panel" id="cambiar">
+      <h3>Cambiar datos</h3>
+      <p>Al renombrar cambia el color, porque la huella sale del nombre. <code>passwd</code> vuelve a cifrar todo con una sal nueva.</p>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur set banco usuario "cliente-0042"</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln"><span class="sw" style="--c:#8493f5"></span>#8493f5  Banco</span></pre></div>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur mv spoti "Spotify familiar"</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln"><span class="sw" style="--c:#93b9a1"></span>#93b9a1  Spotify</span><span class="ln"><span class="sw" style="--c:#dd774b"></span>#dd774b  Spotify familiar</span></pre></div>
+      <div class="console"><pre><span class="ln"><span class="ps">$</span> <span class="cmd">sulfur passwd</span></span><span class="ln ask">Contraseña maestra:</span><span class="ln ask">Contraseña maestra nueva:</span><span class="ln ask">Repítela:</span><span class="ln">Contraseña maestra cambiada.</span></pre></div>
+    </div>
+
+    <div class="panel" id="comandos">
+      <h3>Todos los comandos</h3>
+      <div class="table-wrap"><table>
+        <tr><th>Comando</th><th>Qué hace</th></tr>
+        <tr><td><code>copy "nombre"</code></td><td>Copia el secreto 30 s, fuera del historial del portapapeles.</td></tr>
+        <tr><td><code>list [categoría]</code></td><td>Lista entradas con huella, categoría y correo.</td></tr>
+        <tr><td><code>gen "nombre" [largo]</code></td><td>Genera el secreto; si la entrada existe, lo reemplaza tras confirmar.</td></tr>
+        <tr><td><code>add "nombre"</code></td><td>Agrega una entrada con un secreto tecleado.</td></tr>
+        <tr><td><code>get "nombre"</code></td><td>Muestra el secreto, solo en una terminal.</td></tr>
+        <tr><td><code>edit "nombre"</code></td><td>Cambia el secreto por uno tecleado.</td></tr>
+        <tr><td><code>set "nombre" usuario|categoria "valor"</code></td><td>Cambia el correo o la categoría; <code>""</code> los borra.</td></tr>
+        <tr><td><code>mv "nombre" "nuevo"</code></td><td>Renombra una entrada.</td></tr>
+        <tr><td><code>rm "nombre"</code></td><td>Borra una entrada tras confirmar.</td></tr>
+        <tr><td><code>import "archivo"</code></td><td>Carga muchas entradas; todas o ninguna.</td></tr>
+        <tr><td><code>init</code></td><td>Crea la bóveda.</td></tr>
+        <tr><td><code>passwd</code></td><td>Cambia la maestra y vuelve a cifrar todo.</td></tr>
+        <tr><td><code>color "texto"</code></td><td>Muestra la huella de cualquier texto.</td></tr>
+      </table></div>
+    </div>
   </div>
 </section>
 
-<section class="sherry-level" id="primeros-pasos">
-  <div class="sherry-level-wrap">
-    <h2>Primeros pasos</h2>
-    <p class="muted">Todas las salidas de esta página son de una bóveda de demostración con datos inventados, copiadas de la consola. Lo que tecleas en los prompts de contraseña no se ve en pantalla.</p>
-
-    <h3>Crear la bóveda</h3>
-    <p>La maestra pide al menos 12 caracteres. Cuatro o cinco palabras al azar funcionan bien. No hay forma de recuperarla si la olvidas.</p>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur init</span>
-<span class="ask">Contraseña maestra nueva:</span>
-<span class="ask">Repítela:</span>
-<span class="out">Bóveda creada en %APPDATA%\sulfur\azufre.json</span></pre>
-
-    <h3>Importar tus cuentas de una vez</h3>
-    <p>Escribe un archivo con una línea <code>nombre=secreto</code> por cuenta. Un encabezado <code>[categoría | correo]</code> aplica a las líneas de abajo hasta el siguiente. El secreto se toma literal: puede llevar <code>=</code> o <code>#</code>, y no va entre comillas.</p>
-<pre data-lang="cuentas.env"><span class="hd">[personal | ana@example.com]</span>
-<span class="key">Gmail</span>=<span class="str">lluvia-de-marzo-17</span>
-<span class="key">Spotify</span>=<span class="str">otra contraseña</span>
-
-<span class="hd">[trabajo | ana.trabajo@example.com]</span>
-<span class="key">Slack</span>=<span class="str">k7#Qp9vR2mXz</span>
-<span class="key">GitHub</span>=<span class="str">#password</span>
-
-<span class="hd">[finanzas]</span>
-<span class="key">Banco</span>=<span class="str">xyz-123-abc</span></pre>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur import cuentas.env</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="out"><span class="sw" style="--c:#6843b1"></span>#6843b1  Gmail</span>
-<span class="out"><span class="sw" style="--c:#93b9a1"></span>#93b9a1  Spotify</span>
-<span class="out"><span class="sw" style="--c:#65adf8"></span>#65adf8  Slack</span>
-<span class="out"><span class="sw" style="--c:#e0b0c6"></span>#e0b0c6  GitHub</span>
-<span class="out"><span class="sw" style="--c:#8493f5"></span>#8493f5  Banco</span>
-<span class="out">Importadas: 5</span>
-<span class="ask">¿Borrar cuentas.env? Tiene los secretos en claro. [s/N]</span> <span class="typed">s</span>
-<span class="out">Borrado: cuentas.env</span></pre>
-    <p>El archivo se revisa completo antes de pedir la maestra. Si una línea está mal, no se importa nada y el error nunca repite el secreto:</p>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur import malo.env</span>
-<span class="err">No se importó nada:</span>
-<span class="err">línea 1: falta el signo =</span>
-<span class="err">línea 2: el secreto de Facebook está entre comillas; quítalas si no son parte de la contraseña</span></pre>
-    <div class="sherry-pixel-card"><div class="callout warn">
-      <div class="callout-title">El archivo de importación tiene tus secretos en claro</div>
-      <p>Créalo fuera de carpetas sincronizadas o con respaldo automático, acepta borrarlo al final y cierra la pestaña del editor. VS Code guarda copias en su historial local (<code>%APPDATA%\Code\User\History</code>) y el Bloc de notas de Windows 11 recuerda las pestañas abiertas.</p>
-    </div></div>
-
-    <h3>Ver lo que tienes</h3>
-    <p><code>list</code> agrupa por categoría y muestra el correo de cada cuenta. Con una categoría, filtra.</p>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur list</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="out"><span class="sw" style="--c:#8493f5"></span>#8493f5  Banco    [finanzas]</span>
-<span class="out"><span class="sw" style="--c:#6843b1"></span>#6843b1  Gmail    [personal]  ana@example.com</span>
-<span class="out"><span class="sw" style="--c:#93b9a1"></span>#93b9a1  Spotify  [personal]  ana@example.com</span>
-<span class="out"><span class="sw" style="--c:#e0b0c6"></span>#e0b0c6  GitHub   [trabajo]   ana.trabajo@example.com</span>
-<span class="out"><span class="sw" style="--c:#65adf8"></span>#65adf8  Slack    [trabajo]   ana.trabajo@example.com</span>
-
-<span class="ps">$</span> <span class="cmd">sulfur list trabajo</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="out"><span class="sw" style="--c:#e0b0c6"></span>#e0b0c6  GitHub  [trabajo]  ana.trabajo@example.com</span>
-<span class="out"><span class="sw" style="--c:#65adf8"></span>#65adf8  Slack   [trabajo]  ana.trabajo@example.com</span></pre>
-  </div>
-</section>
-
-<section class="sherry-level is-opaque" id="uso">
-  <div class="sherry-level-wrap">
-    <h2>Uso diario</h2>
-
-    <h3>Copiar una contraseña</h3>
-    <p><code>copy</code> pone el secreto en el portapapeles por 30 segundos, marcado para que Windows no lo guarde en el historial (Win+V) ni lo suba a la nube, y lo vacía al terminar o con Ctrl+C. Si copias otra cosa en ese tiempo, no la toca. El secreto nunca pasa por la pantalla.</p>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur copy netflix</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="out">Copiado Netflix (usuario: ana@example.com) Se borra en 30 s; Ctrl+C lo borra ya.</span>
-<span class="out">Portapapeles vaciado.</span></pre>
-    <p><code>get</code> imprime el secreto, pero solo en una terminal real: si lo rediriges a un archivo o a otro programa, se niega.</p>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur get netflix &gt; salida.txt</span>
-<span class="err">get solo escribe en una terminal, nunca a un archivo o pipe.</span></pre>
-
-    <h3>Buscar sin el nombre exacto</h3>
-    <p>Primero busca el nombre tal cual, después sin distinguir mayúsculas ni acentos, y al final cualquier entrada que lo contenga. Si quedan varias, te pregunta cuál. Funciona en <code>copy</code>, <code>get</code>, <code>edit</code>, <code>set</code>, <code>rm</code> y <code>mv</code>.</p>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur rm g</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="out">1) <span class="sw" style="--c:#6843b1"></span>#6843b1  Gmail</span>
-<span class="out">2) <span class="sw" style="--c:#e0b0c6"></span>#e0b0c6  GitHub</span>
-<span class="ask">¿Cuál? [1-2]</span> <span class="typed">1</span>
-<span class="ask">¿Borrar Gmail? No se puede deshacer. [s/N]</span> <span class="typed">s</span>
-<span class="out">Borrada: Gmail</span></pre>
-
-    <h3>Generar contraseñas</h3>
-    <p><code>gen</code> crea una contraseña aleatoria de 24 caracteres (de 12 a 128 si le das otra longitud) con letras, números y símbolos, sin espacios ni comillas. No la muestra: para usarla, <code>copy</code>. Si la cuenta ya existe, pregunta antes de reemplazar su secreto.</p>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur gen Netflix</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="ask">Usuario o correo (opcional):</span> <span class="typed">ana@example.com</span>
-<span class="ask">Categoría (opcional):</span> <span class="typed">personal</span>
-<span class="out"><span class="sw" style="--c:#8f3779"></span>#8f3779  Netflix</span></pre>
-
-    <h3>Cambiar datos</h3>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur set banco usuario "cliente-0042"</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="out"><span class="sw" style="--c:#8493f5"></span>#8493f5  Banco</span>
-
-<span class="ps">$</span> <span class="cmd">sulfur mv spoti "Spotify familiar"</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="out"><span class="sw" style="--c:#93b9a1"></span>#93b9a1  Spotify</span>
-<span class="out"><span class="sw" style="--c:#dd774b"></span>#dd774b  Spotify familiar</span>
-
-<span class="ps">$</span> <span class="cmd">sulfur passwd</span>
-<span class="ask">Contraseña maestra:</span>
-<span class="ask">Contraseña maestra nueva:</span>
-<span class="ask">Repítela:</span>
-<span class="out">Contraseña maestra cambiada.</span></pre>
-    <p>Al renombrar cambia el color, porque la huella sale del nombre. Las categorías se guardan siempre en minúsculas.</p>
-
-    <h3>Todos los comandos</h3>
-    <table>
-      <tr><th>Comando</th><th>Qué hace</th></tr>
-      <tr><td><code>init</code></td><td>Crea la bóveda.</td></tr>
-      <tr><td><code>add "nombre"</code></td><td>Agrega una entrada con un secreto tecleado; pregunta correo y categoría.</td></tr>
-      <tr><td><code>gen "nombre" [largo]</code></td><td>Genera el secreto; si la entrada existe, lo reemplaza tras confirmar.</td></tr>
-      <tr><td><code>copy "nombre"</code></td><td>Copia el secreto 30 s, fuera del historial del portapapeles.</td></tr>
-      <tr><td><code>get "nombre"</code></td><td>Muestra el secreto, solo en una terminal.</td></tr>
-      <tr><td><code>edit "nombre"</code></td><td>Cambia el secreto por uno tecleado.</td></tr>
-      <tr><td><code>set "nombre" usuario|categoria "valor"</code></td><td>Cambia el correo o la categoría; <code>""</code> los borra.</td></tr>
-      <tr><td><code>mv "nombre" "nuevo"</code></td><td>Renombra una entrada.</td></tr>
-      <tr><td><code>rm "nombre"</code></td><td>Borra una entrada tras confirmar.</td></tr>
-      <tr><td><code>list [categoría]</code></td><td>Lista entradas con huella, categoría y correo.</td></tr>
-      <tr><td><code>import "archivo"</code></td><td>Carga muchas entradas; todas o ninguna.</td></tr>
-      <tr><td><code>passwd</code></td><td>Cambia la maestra y vuelve a cifrar todo.</td></tr>
-      <tr><td><code>color "texto"</code></td><td>Muestra la huella de cualquier texto.</td></tr>
-    </table>
-  </div>
-</section>
-
-<section class="sherry-level" id="cifrado">
-  <div class="sherry-level-wrap">
+<section id="cifrado">
+  <div class="wrap">
     <h2>Cómo se cifra</h2>
-    <p>El archivo es JSON. Lo único legible es la configuración; cada entrada es un bloque cifrado del mismo tamaño que los demás:</p>
-<pre data-lang="azufre.json">{
-  <span class="key">"entries"</span>: [
-    <span class="str">"FquQJVzcNosTHZNJ7V/2eC7n..."</span>,
-    <span class="str">"Sp8Qsya+kka155ebNqPafVKy..."</span>,
-    <span class="str">"..."</span>
-  ],
-  <span class="key">"index"</span>: <span class="str">"0n6Ojw9Ws+aXLhhUcLrgdCPV..."</span>,
-  <span class="key">"kdf"</span>: {
-    <span class="key">"algorithm"</span>: <span class="str">"argon2id"</span>,
-    <span class="key">"iterations"</span>: <span class="num">3</span>,
-    <span class="key">"memoryKiB"</span>: <span class="num">65536</span>,
-    <span class="key">"parallelism"</span>: <span class="num">4</span>
-  },
-  <span class="key">"salt"</span>: <span class="str">"fpWlnkH2Z0td4Edlcwji/A=="</span>,
-  <span class="key">"version"</span>: <span class="num">3</span>
-}</pre>
-    <div class="sherry-pixel-card"><div class="step-row">
-      <div class="step-num">01</div>
-      <div>
-        <h4>De la maestra a la clave</h4>
-        <p class="muted">La maestra pasa por Argon2id, un algoritmo lento a propósito: cada intento cuesta 64 MiB de memoria y tres pasadas, mezclado con la sal de tu bóveda. El resultado es una clave de 32 bytes que nunca se guarda; se recalcula cada vez.</p>
-      </div>
-    </div></div>
-    <div class="sherry-pixel-card"><div class="step-row flame">
-      <div class="step-num">02</div>
-      <div>
-        <h4>De la clave a cada entrada</h4>
-        <p class="muted">Nombre, secreto, correo y categoría se rellenan a 256 bytes, para que todas las entradas midan lo mismo, y se cifran con XChaCha20-Poly1305 usando un número aleatorio propio. Cada entrada lleva un sello: si cambia un solo bit, no abre.</p>
-      </div>
-    </div></div>
-    <div class="sherry-pixel-card"><div class="step-row lake">
-      <div class="step-num">03</div>
-      <div>
-        <h4>El índice amarra la lista</h4>
-        <p class="muted">Un bloque cifrado aparte guarda la huella criptográfica de cada entrada, en orden. Borrar, reordenar o volver a meter una entrada vieja del archivo se detecta.</p>
-      </div>
-    </div></div>
+    <div class="flow">
+      <div><h4>Maestra → clave</h4><p>Argon2id, lento a propósito: 64 MiB y tres pasadas por intento, con la sal de tu bóveda. La clave nunca se guarda.</p></div>
+      <div><h4>Clave → entradas</h4><p>Cada entrada se rellena a 256 bytes y se sella con XChaCha20-Poly1305. Si cambia un bit, no abre.</p></div>
+      <div><h4>Índice → lista</h4><p>Un bloque aparte sella la lista completa. Borrar, reordenar o reinsertar entradas viejas se detecta.</p></div>
+    </div>
+    <p>El archivo es JSON; lo único legible es la configuración, y todas las entradas miden lo mismo:</p>
+    <div class="console file"><div class="console-bar" aria-hidden="true"><span>azufre.json</span><span>archivo</span></div><pre><span class="ln">{</span><span class="ln">  <span class="k">"entries"</span>: [<span class="s">"FquQJVzcNosTHZNJ7V/2eC7n..."</span>, <span class="s">"Sp8Qsya+kka155ebNqPafVKy..."</span>, <span class="s">"..."</span>],</span><span class="ln">  <span class="k">"index"</span>: <span class="s">"0n6Ojw9Ws+aXLhhUcLrgdCPV..."</span>,</span><span class="ln">  <span class="k">"kdf"</span>: { <span class="k">"algorithm"</span>: <span class="s">"argon2id"</span>, <span class="k">"iterations"</span>: <span class="n">3</span>, <span class="k">"memoryKiB"</span>: <span class="n">65536</span>, <span class="k">"parallelism"</span>: <span class="n">4</span> },</span><span class="ln">  <span class="k">"salt"</span>: <span class="s">"fpWlnkH2Z0td4Edlcwji/A=="</span>,</span><span class="ln">  <span class="k">"version"</span>: <span class="n">3</span></span><span class="ln">}</span></pre></div>
     <h3>¿Se puede descifrar sin la maestra?</h3>
-    <p>Solo adivinándola. El cifrado no tiene atajos conocidos, y cada intento de adivinar cuesta una derivación completa de Argon2id. Todo depende de tu maestra: una palabra con un número cae rápido; cuatro o cinco palabras al azar tardarían del orden de cien mil años a miles de intentos por segundo. Los riesgos reales están en otro lado: un programa malicioso que registre lo que tecleas, alguien que vea tu pantalla o un error en el código.</p>
-    <div class="sherry-pixel-card"><div class="callout info">
+    <p>Solo adivinándola, y cada intento cuesta una derivación completa de Argon2id. Todo depende de tu maestra: una palabra con un número cae rápido; cuatro o cinco palabras al azar tardarían del orden de cien mil años a miles de intentos por segundo. Los riesgos reales están en otro lado: un programa que registre lo que tecleas, alguien que vea tu pantalla o un error en el código.</p>
+    <div class="callout info">
       <div class="callout-title">Para quien quiera revisarlo</div>
-      <p>El <a href="https://github.com/RemiH06/Sulfur/blob/main/docs/modelo-de-amenazas.md">modelo de amenazas</a> describe los adversarios considerados, cada primitiva, las limitaciones conocidas y preguntas concretas para una revisión. Las garantías tienen pruebas de propiedades en <code>test/Spec.hs</code>, y el <a href="estructura/sulfur.html">mapa del código</a> (generado con <a href="https://github.com/RemiH06/Ariadne">Ariadne</a>) muestra módulos, tipos y dependencias.</p>
-    </div></div>
+      <p>El <a href="https://github.com/RemiH06/Sulfur/blob/main/docs/modelo-de-amenazas.md">modelo de amenazas</a> describe adversarios, primitivas, limitaciones y preguntas concretas para una revisión. El <a href="estructura/sulfur.html">mapa del código</a>, generado con <a href="https://github.com/RemiH06/Ariadne">Ariadne</a>, muestra módulos, tipos y dependencias.</p>
+    </div>
   </div>
 </section>
 
-<section class="sherry-level is-opaque" id="huella">
-  <div class="sherry-level-wrap">
+<section class="is-opaque" id="huella">
+  <div class="wrap">
     <h2>La huella</h2>
-    <p>El color de cada entrada sale de su nombre, nunca de su contraseña. El nombre se normaliza (NFC), se le calcula SHA-256 y de los primeros bytes salen el matiz, la luminosidad (siempre entre 0.45 y 0.85, ni negro ni blanco) y la saturación en OKLCH; si el color no cabe en pantalla, solo se le baja la saturación.</p>
-    <p>Pruébalo: este es el mismo algoritmo que <code>sulfur color</code>, calculado en tu navegador. Lo escrito no sale de esta página.</p>
+    <p>El color sale del nombre, nunca de la contraseña: SHA-256 del nombre normalizado, y de sus primeros bytes salen matiz, luminosidad (entre 0.45 y 0.85, ni negro ni blanco) y saturación en OKLCH. Pruébalo: es el mismo algoritmo que <code>sulfur color</code>, calculado aquí. Lo escrito no sale de esta página.</p>
     <div class="huella">
       <div>
-        <label for="huella-input">Texto</label>
+        <label for="huella-input">Nombre de una cuenta</label>
         <input id="huella-input" type="text" value="Fry" autocomplete="off" spellcheck="false">
       </div>
       <div class="huella-out" aria-live="polite">
         <div class="huella-swatch" id="huella-swatch" style="background:#3fa5d8"></div>
-        <div class="huella-vals">
-          <div class="hex" id="huella-hex">#3fa5d8</div>
-          <div class="ok" id="huella-oklch">oklch(0.685 0.119 234.4)</div>
-        </div>
+        <div class="huella-vals"><div class="hex" id="huella-hex">#3fa5d8</div><div class="ok" id="huella-oklch">oklch(0.685 0.119 234.4)</div></div>
       </div>
     </div>
-<pre class="console" data-lang="terminal"><span class="ps">$</span> <span class="cmd">sulfur color "Fry"</span>
-<span class="out"><span class="sw" style="--c:#3fa5d8"></span>#3fa5d8  oklch(0.685 0.119 234.4)</span></pre>
-    <div class="sherry-pixel-card"><div class="callout warn">
+    <div class="callout warn">
       <div class="callout-title">La huella es pública</div>
       <p>Cualquiera puede calcular el color de "Gmail" o "Banco". Por eso Sulfur nunca la guarda en disco: con los nombres cifrados, guardar sus colores los delataría.</p>
-    </div></div>
+    </div>
   </div>
 </section>
 
-<footer class="sherry-level">
-  <div class="sherry-level-wrap">
-    <p class="prompt">Sulfur · © 2026 Hex (<a href="https://github.com/RemiH06">@RemiH06</a>) · <a href="https://github.com/RemiH06/Sulfur/blob/main/LICENSE">GPL-3.0</a> · Tema <a href="https://github.com/RemiH06/iroFactory">sherry de iroFactory</a> · Pixel Card de <a href="https://github.com/DavidHDev/react-bits">React Bits</a> por David Haz</p>
+<footer>
+  <div class="wrap">
+    <p>Sulfur · © 2026 Hex (<a href="https://github.com/RemiH06">@RemiH06</a>) · <a href="https://github.com/RemiH06/Sulfur/blob/main/LICENSE">GPL-3.0</a> · Tema <a href="https://github.com/RemiH06/iroFactory">sherry de iroFactory</a> · Pixel Card de <a href="https://github.com/DavidHDev/react-bits">React Bits</a> por David Haz</p>
   </div>
 </footer>
 
 </div><!-- .page -->
 
 <script>
-let isLight = false;
-let crtOn   = true;
-let triOn   = true;
-
+let isLight = false, crtOn = true, triOn = true;
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-
-function cssVar(name) {
-  return getComputedStyle(document.body).getPropertyValue(name).trim();
-}
+function cssVar(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
 
 function toggleTheme() {
   isLight = !isLight;
   document.body.classList.toggle('light', isLight);
-  const btn = document.getElementById('toggle-btn');
-  btn.textContent = isLight ? '⬛ dark' : '⬜ light';
-  btn.setAttribute('aria-label', isLight ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro');
+  const b = document.getElementById('toggle-btn');
+  b.textContent = isLight ? '⬛ dark' : '⬜ light';
+  b.setAttribute('aria-label', isLight ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro');
 }
 function toggleCRT() {
   crtOn = !crtOn;
@@ -723,11 +608,14 @@ function toggleTri() {
   if (window._sherryTri) triOn ? window._sherryTri.resume() : window._sherryTri.pause();
 }
 
-// Título de esquina: aparece al dejar atrás la portada.
+// Marca de esquina: aparece al dejar atrás la portada.
 (function () {
-  const title = document.getElementById('corner-title');
-  const hero = document.getElementById('inicio');
-  const update = () => { title.style.opacity = window.scrollY > hero.offsetHeight * 0.6 ? '1' : '0'; };
+  const corner = document.getElementById('corner'), hero = document.getElementById('inicio');
+  const update = () => {
+    const on = window.scrollY > hero.offsetHeight * 0.7;
+    corner.classList.toggle('is-on', on);
+    corner.tabIndex = on ? 0 : -1;
+  };
   window.addEventListener('scroll', update, { passive: true });
   update();
 })();
@@ -804,7 +692,7 @@ class SherryPixel {
 function initPixelCards() {
   const GAP = 6;
   const SPEED = reduceMotion.matches ? 0 : 30 * 0.001; // getEffectiveSpeed(30)
-  const ACCENT_SEL = '.callout-title, .step-num, .badge';
+  const ACCENT_SEL = '.tag';
 
   function parseRgb(str) {
     const m = String(str).match(/rgba?\(([^)]+)\)/);
@@ -1066,6 +954,88 @@ function initPixelCards() {
     pause() { cancelAnimationFrame(raf); },
     resume() { if (reduceMotion.matches) still(); else raf = requestAnimationFrame(draw); },
   };
+})();
+
+// ══════════════════════════════════════════════════════
+// Consolas que teclean (shui-query-tabs, sin la consola aparte): la
+// primera línea teclea su comando por reloj y el resto aparece en
+// escalera de 45 ms. Estado inerte por CSS: sin JS o con movimiento
+// reducido, todo se ve completo desde el inicio; las clases que ocultan
+// se agregan aquí, justo antes de animar.
+// ══════════════════════════════════════════════════════
+function playConsole(box) {
+  if (!box || reduceMotion.matches) return;
+  if (box._timers) box._timers.forEach(clearTimeout);
+  box._timers = [];
+  const lines = [...box.querySelectorAll('.ln')];
+  const cmd = lines[0] && lines[0].querySelector('.cmd');
+  if (!cmd) return;
+  const full = box._cmd || (box._cmd = cmd.textContent);
+  lines.slice(1).forEach(l => { l.classList.remove('is-shown'); l.classList.add('is-waiting'); });
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  caret.setAttribute('aria-hidden', 'true');
+  const t0 = performance.now(), TYPE = Math.min(520, 26 * full.length);
+  const type = () => {
+    const i = Math.min(full.length, Math.ceil((performance.now() - t0) / TYPE * full.length));
+    cmd.textContent = full.slice(0, i);
+    cmd.after(caret);
+    if (i < full.length) box._timers.push(setTimeout(type, 16));
+    else {
+      caret.remove();
+      lines.slice(1).forEach((l, k) => box._timers.push(setTimeout(() => {
+        l.classList.remove('is-waiting'); l.classList.add('is-shown');
+      }, 90 + 45 * k)));
+    }
+  };
+  type();
+}
+
+// Consolas que no caben: marca para el desvanecido del borde derecho,
+// que se quita al llegar al final del desplazamiento.
+(function () {
+  const check = c => c.classList.toggle('is-cut', c.scrollWidth - c.clientWidth - c.scrollLeft > 2);
+  const all = [...document.querySelectorAll('.console')];
+  all.forEach(c => c.addEventListener('scroll', () => check(c), { passive: true }));
+  const run = () => all.forEach(check);
+  window.addEventListener('resize', run);
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setTimeout(run, 0)));
+  run();
+})();
+
+// Portada: teclea una vez al cargar.
+setTimeout(() => playConsole(document.querySelector('[data-type="load"]')), 450);
+
+// Pestañas de uso.
+(function () {
+  const tabs = [...document.querySelectorAll('.tab')];
+  const panels = tabs.map(t => document.getElementById(t.getAttribute('aria-controls')));
+  const narrow = window.matchMedia('(max-width: 760px)');
+  panels.forEach((p, i) => { p.setAttribute('role', 'tabpanel'); p.setAttribute('aria-labelledby', tabs[i].id); p.tabIndex = 0; });
+  function select(id, focus) {
+    tabs.forEach(t => {
+      const on = t.getAttribute('aria-controls') === id;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      if (on) {
+        if (focus) t.focus();
+        if (narrow.matches) { const bar = t.parentElement; bar.scrollTo({ left: t.offsetLeft - (bar.clientWidth - t.offsetWidth) / 2, behavior: reduceMotion.matches ? 'auto' : 'smooth' }); }
+      }
+    });
+    panels.forEach(p => { p.hidden = p.id !== id; });
+    playConsole(document.getElementById(id).querySelector('.console:not(.file)'));
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', e => { e.preventDefault(); select(t.getAttribute('aria-controls')); history.replaceState(null, '', '#' + t.getAttribute('aria-controls')); });
+    t.addEventListener('keydown', e => {
+      const n = tabs.length, k = e.key;
+      const j = k === 'ArrowRight' ? (i + 1) % n : k === 'ArrowLeft' ? (i + n - 1) % n : k === 'Home' ? 0 : k === 'End' ? n - 1 : -1;
+      if (j >= 0) { e.preventDefault(); select(tabs[j].getAttribute('aria-controls'), true); }
+    });
+  });
+  const fromHash = panels.find(p => '#' + p.id === location.hash);
+  panels.forEach(p => { p.hidden = p !== (fromHash || panels[0]); });
+  tabs.forEach(t => { const on = t.getAttribute('aria-controls') === (fromHash || panels[0]).id; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; });
 })();
 
 // ══════════════════════════════════════════════════════
