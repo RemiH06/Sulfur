@@ -19,12 +19,12 @@
 
 Sulfur convierte texto en color de forma determinista: el mismo texto siempre da el mismo color. Sobre esa idea está construyendo un gestor de contraseñas de línea de comandos, donde cada entrada se reconoce de un vistazo por su color.
 
-El proyecto separa dos capas que nunca se mezclan. La **huella visual** es pública: un color OKLCH derivado del SHA-256 del nombre de la entrada, sin ningún secreto de por medio. La **bóveda** es el cifrado real: la clave se deriva de la contraseña maestra con Argon2id y cada entrada (nombre y secreto juntos) se sella con XChaCha20-Poly1305 y un nonce aleatorio propio, así que el archivo no revela ni siquiera en qué servicios hay cuenta.
+El proyecto yace en dos capas. La **huella visual** es pública: un color OKLCH derivado del SHA-256 del nombre de la entrada, sin ningún secreto de por medio. La **bóveda** es un cifrado: la clave se deriva de la contraseña maestra con Argon2id y cada entrada (nombre y secreto) se sella con XChaCha20-Poly1305 y un nonce aleatorio propio, así que el archivo no revela ni siquiera en qué servicios hay cuenta.
 
 La versión 1.0 era un experimento en Kotlin sin valor de seguridad. Se conserva como referencia en `legacy/kotlin/`.
 
 ```diff
-- La bóveda no ha tenido revisión externa. No la uses con contraseñas reales todavía.
+- La bóveda no ha tenido revisión externa. No aconsejo el uso con contraseñas reales todavía.
 - La huella visual no protege nada: cualquiera puede calcular el color de un nombre. Sirve para reconocer, no para autenticar.
 - No detecta si alguien restaura el archivo completo a una versión anterior.
 ```

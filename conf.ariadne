@@ -1,0 +1,8 @@
+# Diagrama de estructura de Sulfur. Regenerar desde la raíz con:
+#   ariadne generate
+[project]
+name = "Sulfur"
+
+[output]
+formats = ["html"]
+dir = "./docs/estructura"
