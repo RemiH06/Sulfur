@@ -34,6 +34,7 @@ executable sulfur
     import:           shared
     hs-source-dirs:   app
     main-is:          Main.hs
+    other-modules:    Clipboard
     build-depends:
         base,
         sulfur,

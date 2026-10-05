@@ -88,7 +88,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 - Bajar los parámetros de Argon2 no debilita nada: la clave cambia y la bóveda no abre.
 - Puede impedir el uso (borrar o corromper el archivo). La disponibilidad no está en alcance.
 
-**A3, observador de pantalla.** Las contraseñas se leen sin eco cuando la entrada es una consola real (`getPassword` de haskeline; verificado a mano en PowerShell el 4 de octubre de 2026, junto con que una maestra con "ñ" tecleada y mandada por pipe dan la misma clave, y que la página de códigos de la consola se restaura aunque se cancele con Ctrl+C). `get` solo escribe a una terminal y se niega a escribir a un archivo o pipe. `list` sí muestra nombres, categorías y correos en pantalla (no secretos) y se puede redirigir.
+**A3, observador de pantalla.** Las contraseñas se leen sin eco cuando la entrada es una consola real (`getPassword` de haskeline; verificado a mano en PowerShell el 4 de octubre de 2026, junto con que una maestra con "ñ" tecleada y mandada por pipe dan la misma clave, y que la página de códigos de la consola se restaura aunque se cancele con Ctrl+C). `get` solo escribe a una terminal y se niega a escribir a un archivo o pipe. `copy` evita la pantalla: pone el secreto en el portapapeles (`app/Clipboard.hs`) junto con los formatos `ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory = 0` y `CanUploadToCloudClipboard = 0`, que Windows respeta para no guardarlo en el historial de Win+V ni subirlo al portapapeles en la nube. A los 30 segundos, o con Ctrl+C, lo vacía si el número de secuencia del portapapeles no cambió; si otro programa escribió encima, no lo toca. `list` sí muestra nombres, categorías y correos en pantalla (no secretos) y se puede redirigir.
 
 ## Limitaciones conocidas
 
@@ -101,6 +101,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 7. **Git Bash (mintty).** No es una consola de Windows: las contraseñas se ven al teclear y `get` se niega a escribir.
 8. **Dependencias.** `crypton`, `ram`, `aeson` y las demás están fijadas en `cabal.project.freeze`, pero no se han auditado como parte de este proyecto.
 9. **Archivo de importación.** Mientras exista, tiene todos los secretos en claro. Borrarlo no garantiza que sea irrecuperable (ver "Importación").
+10. **Portapapeles.** Durante los 30 segundos de `copy`, cualquier programa del mismo usuario puede leer el secreto (A4, fuera de alcance), y un administrador de portapapeles de terceros puede ignorar los formatos de exclusión. Los formatos se verificaron presentes durante el plazo y el vaciado al final, pero la exclusión del historial de Win+V depende de que Windows los respete.
 
 ## Preguntas concretas para la revisión
 

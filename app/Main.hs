@@ -2,6 +2,7 @@
 
 module Main (main) where
 
+import Clipboard (copyTransient)
 import Control.Exception (finally)
 import Control.Monad (unless, when)
 import Data.List (dropWhileEnd, sortOn)
@@ -36,6 +37,7 @@ main = withUtf8Console $ do
     ["init"] -> cmdInit
     ["add", name] -> cmdAdd (T.pack name)
     ["get", name] -> cmdGet (T.pack name)
+    ["copy", name] -> cmdCopy (T.pack name)
     ["list"] -> cmdList Nothing
     ["list", category] -> cmdList (Just (T.pack category))
     ["set", name, field, value] -> cmdSet (T.pack name) field (T.pack value)
@@ -56,6 +58,7 @@ usage =
     , "  sulfur init                        crea la bóveda"
     , "  sulfur add \"<nombre>\"              agrega una entrada con un secreto tecleado"
     , "  sulfur gen \"<nombre>\" [longitud]   genera el secreto (default " <> show defaultLength <> "); si existe, lo reemplaza"
+    , "  sulfur copy \"<nombre>\"             copia el secreto al portapapeles por " <> show clipboardSeconds <> " s, fuera del historial"
     , "  sulfur get \"<nombre>\"              muestra el secreto de una entrada"
     , "  sulfur edit \"<nombre>\"             cambia el secreto por uno tecleado"
     , "  sulfur rm \"<nombre>\"               borra una entrada"
@@ -121,7 +124,26 @@ cmdGet name = do
   e <- orDie (lookupEntry key name v)
   TIO.putStrLn (entrySecret e)
 
--- | No muestra el secreto generado; para verlo, `get`.
+-- | El secreto no pasa por la pantalla ni por el historial de la terminal.
+cmdCopy :: Text -> IO ()
+cmdCopy name = do
+  (_, v, key) <- openVault
+  e <- orDie (lookupEntry key name v)
+  putStrLn
+    ( "Copiado " <> maybe "" (\l -> "(usuario: " <> T.unpack l <> ") ") (entryLogin e)
+        <> "Se borra en " <> show clipboardSeconds <> " s; Ctrl+C lo borra ya."
+    )
+  hFlush stdout
+  cleared <- copyTransient clipboardSeconds (entrySecret e)
+  putStrLn $
+    if cleared
+      then "Portapapeles vaciado."
+      else "Copiaste otra cosa encima; no se tocó el portapapeles."
+
+clipboardSeconds :: Int
+clipboardSeconds = 30
+
+-- | No muestra el secreto generado; para verlo, `get` o `copy`.
 cmdGen :: Text -> Int -> IO ()
 cmdGen name len = do
   when (T.null (T.strip name)) $ die "El nombre no puede estar vacío."

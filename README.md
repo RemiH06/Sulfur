@@ -50,6 +50,7 @@ El diseño criptográfico, los adversarios considerados y las limitaciones conoc
 - `sulfur init` crea la bóveda; pide una contraseña maestra de al menos 12 caracteres.
 - `sulfur add "<nombre>"` agrega una entrada con un secreto tecleado.
 - `sulfur gen "<nombre>" [longitud]` genera el secreto (24 caracteres por default, de 12 a 128). Si la entrada existe, lo reemplaza tras confirmar.
+- `sulfur copy "<nombre>"` copia el secreto al portapapeles por 30 segundos, marcado para que Windows no lo guarde en el historial (Win+V) ni lo suba a la nube, y lo vacía al terminar o con Ctrl+C. Si copiaste otra cosa en ese tiempo, no la toca. Solo en Windows.
 - `sulfur get "<nombre>"` muestra el secreto. Solo escribe a una terminal, nunca a un archivo o pipe.
 - `sulfur edit "<nombre>"` cambia el secreto por uno tecleado.
 - `sulfur mv "<nombre>" "<nuevo>"` renombra una entrada; su color cambia con el nombre.
