@@ -29,7 +29,7 @@ La versión 1.0 era un experimento en Kotlin sin valor de seguridad. Se conserva
 - No detecta si alguien restaura el archivo completo a una versión anterior.
 ```
 
-El diseño criptográfico, los adversarios considerados y las limitaciones conocidas están en [docs/modelo-de-amenazas.md](docs/modelo-de-amenazas.md).
+Documentación con ejemplos de cada comando: [remih06.github.io/Sulfur](https://remih06.github.io/Sulfur/). El diseño criptográfico, los adversarios considerados y las limitaciones conocidas están en [docs/modelo-de-amenazas.md](docs/modelo-de-amenazas.md).
 
 ## Installation
 
