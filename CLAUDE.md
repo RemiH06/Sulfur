@@ -1,15 +1,15 @@
 # Sulfur
 
-Convierte texto en colores e imágenes de forma determinista: mismo texto, mismo resultado. Nombre fijo. Objetivo a futuro: que funcione como gestor de contraseñas.
+Gestor de contraseñas de línea de comandos que además convierte texto en color de forma determinista: mismo texto, mismo color. Nombre fijo.
 
 ## Estado
 
 - `legacy/kotlin/Sulfur.kt` es la versión 1.0 en Kotlin, un experimento sin valor de seguridad. No se extiende. Sirve solo como referencia de lo que ya existe.
-- En marcha: rework completo en **Haskell**, mismo concepto (texto a color/imagen), sin la matemática de Euler ni Fibonacci.
+- Versión 2 en **Haskell**, en uso real desde el 4 de octubre de 2026: la bóveda del usuario se llama `azufre` (`SULFUR_VAULT` de usuario apunta a `%APPDATA%\sulfur\azufre.json`) y el ejecutable está instalado en `%USERPROFILE%\.local\bin`. Tras cambiar el código, reinstalar con `cabal install exe:sulfur --installdir=C:\Users\hecto\.local\bin --install-method=copy --overwrite-policy=always`. Nunca tocar ni leer la bóveda real; las pruebas usan bóvedas temporales en el scratchpad.
 
 ## Dos capas que nunca se mezclan
 
-1. **Huella visual (pública).** Color o imagen derivados de un texto. No es secreta y no protege nada. Sirve para reconocer entradas de un vistazo. Puede ser un degradado, un sólido o un patrón.
+1. **Huella visual (pública).** Color derivado del nombre de una entrada. No es secreta y no protege nada. Sirve para reconocer entradas de un vistazo. Se decidió no hacer imagen: un mosaico de colores sería tan sensible como la lista de nombres.
 2. **Bóveda (secreta).** Cifrado real: clave derivada de la contraseña maestra con Argon2id o scrypt (sal aleatoria), y cifrado autenticado (XChaCha20-Poly1305 o secretbox de libsodium) con nonce aleatorio por cada entrada.
 
 Reglas de seguridad:
@@ -29,7 +29,7 @@ Reglas de seguridad:
 ## Plan Haskell
 
 - Build con cabal (`sulfur.cabal`), toolchain vía GHCup en `C:\ghcup`. Dependencias fijadas en `cabal.project.freeze` (incluye `base`, así que exige GHC 9.10.3); para actualizarlas, `cabal freeze --enable-tests` a propósito.
-- Huella (`src/Sulfur/Fingerprint.hs`), **congelada**: texto normalizado a NFC (`unicode-transforms`), en UTF-8, a SHA-256, a color OKLCH con luminosidad 0.45..0.85 y croma recortado a sRGB. Cambiarla cambia todos los colores ya memorizados; la prueba "valor de referencia" lo detecta. Imagen después (PNG vía JuicyPixels).
+- Huella (`src/Sulfur/Fingerprint.hs`), **congelada**: texto normalizado a NFC (`unicode-transforms`), en UTF-8, a SHA-256, a color OKLCH con luminosidad 0.45..0.85 y croma recortado a sRGB. Cambiarla cambia todos los colores ya memorizados; la prueba "valor de referencia" lo detecta.
 - Bóveda (`src/Sulfur/Vault.hs`): archivo JSON (`aeson`). Clave con Argon2id (RFC 9106: 3 pasadas, 64 MiB, 4 carriles; los parámetros viven en el archivo y se acotan al leer). Cada entrada se sella completa (nombre, secreto y, opcionales, usuario y categoría) con XChaCha20-Poly1305 y nonce aleatorio propio, así que en disco no se ven nombres, correos ni categorías; `normalizeEntry` limpia todo antes de sellar. Formato versión 3: texto plano de cada entrada rellenado a múltiplos de 256 bytes (ISO/IEC 7816-4) antes de sellar, y un índice sellado con el SHA-256 de cada blob en orden confirma la maestra aunque no haya entradas y detecta entradas borradas, reordenadas o reinsertadas desde una versión vieja; toda mutación pasa por `withBlobs`, que lo vuelve a sellar. AAD distinto para índice y entradas. La huella nunca se guarda en disco: es un hash sin sal del nombre y lo delataría.
 - Maestra y nombres se normalizan a NFC. Guardado atómico (temporal + renombrar).
 - `crypton` para las dos capas. Se descartó `saltine` porque exige la librería C de libsodium, incómoda en Windows.
@@ -43,6 +43,6 @@ Reglas de seguridad:
 - En Git Bash (mintty) la salida no cuenta como terminal, así que `get` se niega; en PowerShell, cmd y la terminal de VS Code sí funciona.
 - Reversión completa sin detectar: el índice atrapa entradas borradas, reordenadas o reinsertadas, pero restaurar el archivo entero a una versión vieja sigue siendo válido. Arreglarlo requiere un contador guardado fuera del archivo (si se pierde, la bóveda queda bloqueada).
 - Los `Text` con secretos no se borran de memoria al liberarse (limitación del GC de Haskell); solo la clave derivada vive en memoria que se borra.
-- Formato de salida de la imagen: tamaño, cuadrícula, degradado o sólido por zona.
-- Si la huella visual se muestra en la bóveda de Obsidian o solo en el CLI.
-- Contra qué fondo se mide el contraste mínimo de la huella (depende de dónde se muestre).
+- Respaldos automáticos antes de cada cambio: se pospone hasta que exista Bakery. Ojo: un respaldo sigue abriendo con la maestra vieja después de `passwd`.
+- Si la huella se muestra en la bóveda de Obsidian o solo en el CLI; de eso depende contra qué fondo medir su contraste.
+- Las categorías se guardan tal como se escriben; el usuario las escribe con mayúscula inicial por convención, así que no se normalizan.

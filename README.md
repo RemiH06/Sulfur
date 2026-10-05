@@ -87,7 +87,7 @@ La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de da
 
 ## Future Features
 
-- Huella como imagen PNG.
+- Respaldos automáticos de la bóveda.
 - Interfaz web, si se decide.
 
 ## Autoría
