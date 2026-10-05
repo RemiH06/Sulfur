@@ -12,6 +12,7 @@ import Data.Text.Normalize (NormalizationMode (NFC, NFD), normalize)
 import Sulfur.Fingerprint
 import Sulfur.Import
 import Sulfur.Password
+import Sulfur.Search
 import Sulfur.Vault
 import System.Exit (exitFailure)
 import System.IO (hSetEncoding, stdout, utf8)
@@ -286,6 +287,24 @@ properties =
         let quoted = T.length s >= 2 && T.head s `elem` ['"', '\''] && T.head s == T.last s
          in not (T.null s) && not (T.any (`elem` ['\n', '\r']) s) && not quoted ==>
               parseEntries (T.pack "x=" <> s) === Right [newEntry (T.pack "x") s]
+    )
+  , ( "búsqueda: exacto gana, luego sin mayúsculas ni acentos, luego contenido"
+    , once $
+        let es = map (\n -> newEntry (T.pack n) (T.pack "s")) ["git", "github", "GitHub Enterprise", "Gmail personal", "Gmail trabajo", "\x00d1\&and\x00fa"]
+            names q = map (T.unpack . entryName) (matchEntries (T.pack q) es)
+         in names "git" === ["git"]
+              .&&. names "GITHUB" === ["github"]
+              .&&. names "gmail" === ["Gmail personal", "Gmail trabajo"]
+              .&&. names "nandu" === ["\x00d1\&and\x00fa"]
+              .&&. names "enter" === ["GitHub Enterprise"]
+              .&&. names "netflix" === []
+              .&&. names "   " === []
+    )
+  , ( "búsqueda: el nombre exacto siempre se encuentra a sí mismo y solo a sí mismo"
+    , withEntry $ \e ->
+        let e' = normalizeEntry e
+            otra = newEntry (entryName e' <> T.pack " 2") (T.pack "s")
+         in matchEntries (entryName e) [otra, e'] === [e']
     )
   , ( "contraseña generada: longitud, alfabeto y todas las clases"
     , forAll (choose (12, 128)) $ \n -> ioProperty $ do

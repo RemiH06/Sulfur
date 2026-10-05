@@ -68,6 +68,8 @@ El diseño criptográfico, los adversarios considerados y las limitaciones conoc
   Slack=abc123
   ```
 
+`copy`, `get`, `edit`, `set`, `rm` y `mv` no necesitan el nombre exacto: primero buscan el nombre tal cual, después sin distinguir mayúsculas ni acentos, y al final cualquier entrada que lo contenga (`sulfur copy gmail` encuentra "Gmail personal"). Si hay varias coincidencias, piden elegir por número. `add` y `gen` siempre usan el nombre exacto, porque un nombre nuevo crea una entrada.
+
 La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de datos del usuario en otros sistemas). La variable de entorno `SULFUR_VAULT` apunta a otra ruta.
 
 ## Features

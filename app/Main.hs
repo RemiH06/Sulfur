@@ -15,6 +15,7 @@ import Data.Text.IO qualified as TIO
 import Sulfur.Fingerprint
 import Sulfur.Import (parseEntries)
 import Sulfur.Password (generatePassword)
+import Sulfur.Search (matchEntries)
 import Sulfur.Vault
 import System.Console.Haskeline
 import System.Directory (XdgDirectory (XdgData), doesFileExist, getXdgDirectory, removeFile)
@@ -117,20 +118,22 @@ cmdAdd name = do
 -- | Solo escribe a una terminal: redirigido, el secreto acabaría en un
 -- archivo o en otro proceso.
 cmdGet :: Text -> IO ()
-cmdGet name = do
+cmdGet query = do
   tty <- hIsTerminalDevice stdout
   unless tty $ die "get solo escribe en una terminal, nunca a un archivo o pipe."
   (_, v, key) <- openVault
-  e <- orDie (lookupEntry key name v)
+  e <- resolve key query v
+  when (entryName e /= query) $ putStrLn (entryLine tty (entryName e))
   TIO.putStrLn (entrySecret e)
 
 -- | El secreto no pasa por la pantalla ni por el historial de la terminal.
 cmdCopy :: Text -> IO ()
-cmdCopy name = do
+cmdCopy query = do
   (_, v, key) <- openVault
-  e <- orDie (lookupEntry key name v)
+  e <- resolve key query v
   putStrLn
-    ( "Copiado " <> maybe "" (\l -> "(usuario: " <> T.unpack l <> ") ") (entryLogin e)
+    ( "Copiado " <> T.unpack (entryName e) <> " "
+        <> maybe "" (\l -> "(usuario: " <> T.unpack l <> ") ") (entryLogin e)
         <> "Se borra en " <> show clipboardSeconds <> " s; Ctrl+C lo borra ya."
     )
   hFlush stdout
@@ -164,18 +167,19 @@ cmdGen name len = do
   putStrLn (entryLine tty name)
 
 cmdEdit :: Text -> IO ()
-cmdEdit name = do
+cmdEdit query = do
   (path, v, key) <- openVault
-  _ <- orDie (lookupEntry key name v)
-  secret <- askNew "Secreto nuevo: " "Repítelo: "
+  name <- entryName <$> resolve key query v
+  secret <- askNew ("Secreto nuevo para " <> T.unpack name <> ": ") "Repítelo: "
   v' <- replaceSecret key name secret v >>= orDie
   saveVault path v'
   tty <- hIsTerminalDevice stdout
   putStrLn (entryLine tty name)
 
 cmdRemove :: Text -> IO ()
-cmdRemove name = do
+cmdRemove query = do
   (path, v, key) <- openVault
+  name <- entryName <$> resolve key query v
   v' <- removeEntry key name v >>= orDie
   ok <- confirm ("¿Borrar " <> T.unpack name <> "? No se puede deshacer. [s/N] ")
   unless ok $ die "Sin cambios."
@@ -183,12 +187,13 @@ cmdRemove name = do
   putStrLn ("Borrada: " <> T.unpack name)
 
 cmdSet :: Text -> String -> Text -> IO ()
-cmdSet name field value = do
+cmdSet query field value = do
   setter <- case field of
     _ | field `elem` ["usuario", "correo"] -> pure setLogin
     _ | field `elem` ["categoria", "categoría"] -> pure setCategory
     _ -> die "El campo debe ser usuario o categoria."
   (path, v, key) <- openVault
+  name <- entryName <$> resolve key query v
   v' <- setter key name (Just value) v >>= orDie
   saveVault path v'
   tty <- hIsTerminalDevice stdout
@@ -196,9 +201,10 @@ cmdSet name field value = do
 
 -- | Muestra la huella anterior y la nueva: al cambiar el nombre cambia el color.
 cmdRename :: Text -> Text -> IO ()
-cmdRename old new = do
+cmdRename query new = do
   when (T.null (T.strip new)) $ die "El nombre no puede estar vacío."
   (path, v, key) <- openVault
+  old <- entryName <$> resolve key query v
   v' <- renameEntry key old new v >>= orDie
   saveVault path v'
   tty <- hIsTerminalDevice stdout
@@ -327,6 +333,22 @@ describe err = case err of
   EntryNotFound n -> "No hay ninguna entrada llamada " <> T.unpack n <> "."
   InvalidFile e -> "El archivo de la bóveda no es válido: " <> e
   InvalidKdfParams -> "Parámetros de Argon2 inválidos."
+
+-- | La entrada a la que se refiere lo tecleado, aunque no sea el nombre exacto
+-- ('matchEntries'). Si hay varias candidatas, pide elegir por número.
+resolve :: MasterKey -> Text -> Vault -> IO Entry
+resolve key query v = do
+  es <- orDie (entries key v)
+  case matchEntries query es of
+    [] -> die (describe (EntryNotFound query))
+    [e] -> pure e
+    candidates -> do
+      tty <- hIsTerminalDevice stdout
+      sequence_ [putStrLn (show i <> ") " <> entryLine tty (entryName e)) | (i, e) <- zip [1 :: Int ..] candidates]
+      answer <- readInput False ("¿Cuál? [1-" <> show (length candidates) <> "] ")
+      case readMaybe . T.unpack . T.strip . T.pack =<< answer of
+        Just i | i >= 1 && i <= length candidates -> pure (candidates !! (i - 1))
+        _ -> die "Sin cambios."
 
 -- | Usuario y categoría son opcionales; Enter sin escribir los deja vacíos.
 askMeta :: IO (Maybe Text, Maybe Text)

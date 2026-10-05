@@ -18,6 +18,7 @@ library
         Sulfur.Fingerprint
         Sulfur.Import
         Sulfur.Password
+        Sulfur.Search
         Sulfur.Vault
     build-depends:
         base >=4.17 && <5,
