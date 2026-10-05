@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="t">
+  <title id="t">Sulfur · símbolo alquímico del azufre</title>
+  <!-- Signo alquímico del azufre (🜍): triángulo sobre una cruz. El
+       triángulo es el de la retícula de sherry (equilátero, esquinas
+       vivas); amarillo azufre y azul de la flama con que arde, con el
+       brillo neón del tema, sobre un fondo propio para que se lea igual
+       en temas claros y oscuros. -->
+  <defs>
+    <filter id="brillo" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.8"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="10" fill="#0e0e0e"/>
+  <g fill="none" stroke-width="3.6" stroke-linejoin="miter" stroke-linecap="square">
+    <g filter="url(#brillo)" opacity=".75">
+      <path d="M32 8.5 L48 36 L16 36 Z" stroke="#FFE81A"/>
+      <path d="M32 38.5 V57 M23 47.5 H41" stroke="#478BFF"/>
+    </g>
+    <path d="M32 8.5 L48 36 L16 36 Z" stroke="#FFE81A"/>
+    <path d="M32 38.5 V57 M23 47.5 H41" stroke="#478BFF"/>
+  </g>
+</svg>
