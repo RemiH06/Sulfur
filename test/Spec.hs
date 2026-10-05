@@ -177,7 +177,7 @@ properties =
             .&&. (entries k <$> toOther) === Left (DuplicateName (entryName other))
             .&&. (entries k <$> missing) === Left (EntryNotFound (T.pack "no existe"))
     )
-  , ( "bóveda: usuario y categoría se cambian y se borran sin tocar el secreto"
+  , ( "bóveda: usuario y categoría se cambian y se borran sin tocar el secreto; la categoría queda en minúsculas"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v1) <- withOne e
         let name = entryName e
@@ -188,7 +188,7 @@ properties =
         cleared <- step r (setLogin k name (Just (T.pack "   "))) >>= (`step` setCategory k name Nothing)
         let base = normalizeEntry e
         pure $
-          (r >>= entries k) === Right [base {entryLogin = Just (T.pack "hex@correo.mx"), entryCategory = Just (T.pack "Trabajo")}]
+          (r >>= entries k) === Right [base {entryLogin = Just (T.pack "hex@correo.mx"), entryCategory = Just (T.pack "trabajo")}]
             .&&. (cleared >>= entries k) === Right [base {entryLogin = Nothing, entryCategory = Nothing}]
     )
   , ( "categoría: el filtro ignora mayúsculas, espacios y forma Unicode"

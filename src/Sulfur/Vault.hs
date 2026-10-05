@@ -99,13 +99,15 @@ newEntry name secret = Entry name secret Nothing Nothing
 
 -- | Forma en que se guarda una entrada: nombre y categoría en NFC (para que
 -- buscar y filtrar no dependan de cómo se escribieron), usuario y categoría
--- sin espacios a los lados, y vacío como ausente. El secreto no se toca.
+-- sin espacios a los lados, categoría en minúsculas (convención del usuario,
+-- para que "Personal" y "personal" no salgan como dos), y vacío como ausente.
+-- El secreto no se toca.
 normalizeEntry :: Entry -> Entry
 normalizeEntry e =
   e
     { entryName = normalize NFC (entryName e)
     , entryLogin = cleanMeta (entryLogin e)
-    , entryCategory = cleanMeta (entryCategory e)
+    , entryCategory = T.toLower <$> cleanMeta (entryCategory e)
     }
 
 -- | Sin distinguir mayúsculas ni la forma Unicode en que se escribió.
