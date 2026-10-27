@@ -12,3 +12,4 @@ dist-newstyle/
 .env
 *.env
 .env.*
+CLAUDE.md

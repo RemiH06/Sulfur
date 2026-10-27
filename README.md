@@ -82,12 +82,14 @@ La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de da
 - Categoría y correo o usuario por entrada, cifrados junto con el secreto.
 - Generador de contraseñas sin sesgo de módulo, con al menos un carácter de cada clase.
 - Guardado atómico: un corte a medio guardar no deja la bóveda truncada.
+- Copia de la versión anterior en `.bak` para deshacer el último cambio; `passwd` la borra.
+- Aviso si la bóveda está en la carpeta temporal, que Windows vacía por su cuenta.
 - Contraseñas leídas sin eco y sin historial; Unicode correcto en la consola de Windows.
 - Pruebas de propiedades con QuickCheck sobre la huella y la bóveda.
 
 ## Future Features
 
-- Respaldos automáticos de la bóveda.
+- Respaldos automáticos de la bóveda a otra máquina.
 - Interfaz web, si se decide.
 
 ## Autoría

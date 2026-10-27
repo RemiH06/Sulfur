@@ -32,6 +32,7 @@ module Sulfur.Vault
   , decodeVault
   , loadVault
   , saveVault
+  , backupPath
   ) where
 
 import Control.Monad (unless, when)
@@ -56,7 +57,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding (decodeLatin1, encodeUtf8)
 import Data.Text.Normalize (NormalizationMode (NFC), normalize)
 import Data.Word (Word32)
-import System.Directory (createDirectoryIfMissing, renameFile)
+import System.Directory (copyFile, createDirectoryIfMissing, doesFileExist, renameFile)
 import System.FilePath (takeDirectory)
 
 data KdfParams = KdfParams
@@ -377,10 +378,18 @@ loadVault :: FilePath -> IO (Either VaultError Vault)
 loadVault path = decodeVault <$> BS.readFile path
 
 -- | Escribe a un temporal y lo renombra encima, para que un corte a medio
--- guardar no deje la bóveda truncada.
+-- guardar no deje la bóveda truncada. Antes copia la versión anterior a
+-- 'backupPath', para deshacer el último cambio.
 saveVault :: FilePath -> Vault -> IO ()
 saveVault path v = do
   createDirectoryIfMissing True (takeDirectory path)
   let tmp = path <> ".tmp"
   LBS.writeFile tmp (encodeVault v)
+  exists <- doesFileExist path
+  when exists $ copyFile path (backupPath path)
   renameFile tmp path
+
+-- | Copia de la bóveda antes del último cambio. Abre con la maestra que tenía
+-- entonces, así que `passwd` la borra.
+backupPath :: FilePath -> FilePath
+backupPath path = path <> ".bak"

@@ -93,7 +93,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 ## Limitaciones conocidas
 
 1. **Reversión del archivo completo.** Restaurar `vault.json` entero a una versión anterior y válida no se detecta. Requiere un contador monotónico guardado fuera del archivo; está pendiente porque perder ese contador bloquearía la bóveda.
-2. **Las copias viejas siguen abriendo con la maestra vieja.** Después de `passwd`, cualquier respaldo previo de la bóveda se abre con la maestra anterior. Igual con entradas borradas o rotadas: siguen en los respaldos viejos.
+2. **Las copias viejas siguen abriendo con la maestra vieja.** Después de `passwd`, cualquier respaldo previo de la bóveda se abre con la maestra anterior. Igual con entradas borradas o rotadas: siguen en los respaldos viejos. Cada guardado deja la versión anterior en `vault.json.bak`, junto a la bóveda, para deshacer el último cambio; `passwd` la borra, pero el borrado no garantiza que sea irrecuperable del disco, y una entrada borrada o rotada sigue en el `.bak` hasta el siguiente cambio.
 3. **Longitud visible en bloques.** Con el relleno a 256 bytes, solo se distingue una entrada cuyo nombre más secreto pase de unos 230 bytes (los 23 bytes fijos del JSON cuentan), y aun así solo en saltos de 256.
 4. **Secretos en memoria.** Solo la clave derivada vive en memoria que se borra. Los secretos pasan por `String` y `Text`, que el recolector de basura de GHC no borra al liberar.
 5. **Historial de la terminal.** Lo que imprime `get` queda en el historial de desplazamiento de la terminal hasta que se limpie.

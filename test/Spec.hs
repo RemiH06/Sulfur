@@ -14,7 +14,9 @@ import Sulfur.Import
 import Sulfur.Password
 import Sulfur.Search
 import Sulfur.Vault
+import System.Directory (doesFileExist, getTemporaryDirectory, removePathForcibly)
 import System.Exit (exitFailure)
+import System.FilePath ((</>))
 import System.IO (hSetEncoding, stdout, utf8)
 import Test.QuickCheck
 
@@ -239,6 +241,23 @@ properties =
         pure $
           (entries k <$> contraExistente) === Left (DuplicateName (normalize NFC (entryName e)))
             .&&. (entries k <$> dentroDeLista) === Left (DuplicateName (entryName nueva))
+    )
+  , ( "bóveda: guardar deja en .bak la versión anterior, que abre igual"
+    , once . ioProperty $ do
+        dir <- (</> "sulfur-spec-respaldo") <$> getTemporaryDirectory
+        removePathForcibly dir
+        let path = dir </> "boveda.json"
+        (v, k, v1) <- withOne (newEntry (T.pack "uno") (T.pack "s"))
+        saveVault path v
+        sinRespaldo <- doesFileExist (backupPath path)
+        saveVault path v1
+        anterior <- loadVault (backupPath path)
+        actual <- loadVault path
+        removePathForcibly dir
+        pure $
+          not sinRespaldo
+            .&&. (anterior >>= entries k) === Right []
+            .&&. (actual >>= entries k) === Right [newEntry (T.pack "uno") (T.pack "s")]
     )
   , ( "import: lee nombre=secreto con BOM, CRLF, comentarios y = en el secreto"
     , once $

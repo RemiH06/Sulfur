@@ -18,10 +18,10 @@ import Sulfur.Password (generatePassword)
 import Sulfur.Search (matchEntries)
 import Sulfur.Vault
 import System.Console.Haskeline
-import System.Directory (XdgDirectory (XdgData), doesFileExist, getXdgDirectory, removeFile)
+import System.Directory (XdgDirectory (XdgData), canonicalizePath, doesFileExist, getTemporaryDirectory, getXdgDirectory, removeFile)
 import System.Environment (getArgs, lookupEnv)
 import System.Exit (die)
-import System.FilePath ((</>))
+import System.FilePath (equalFilePath, splitDirectories, (</>))
 import System.IO
 import Text.Printf (printf)
 import Text.Read (readMaybe)
@@ -99,6 +99,10 @@ cmdInit = do
   path <- vaultPath
   exists <- doesFileExist path
   when exists $ die ("Ya existe una bóveda en " <> path)
+  temp <- inTempDir path
+  when temp $ do
+    ok <- confirm (tempWarning path <> " ¿Crearla de todos modos? [s/N] ")
+    unless ok $ die "Sin cambios. Apunta SULFUR_VAULT a otra carpeta, por ejemplo %APPDATA%\\sulfur."
   password <- askNewMaster
   (v, _) <- newVault defaultKdf password >>= orDie
   saveVault path v
@@ -240,7 +244,10 @@ cmdPasswd = do
   password <- askNewMaster
   (v', _) <- changeMaster key defaultKdf password v >>= orDie
   saveVault path v'
-  putStrLn "Contraseña maestra cambiada."
+  let backup = backupPath path
+  hasBackup <- doesFileExist backup
+  when hasBackup $ removeFile backup
+  putStrLn "Contraseña maestra cambiada. Las copias que tengas en otro lado siguen abriendo con la maestra vieja."
 
 -- | Agrupa por categoría (las que no tienen van al final) y alinea columnas.
 cmdList :: Maybe Text -> IO ()
@@ -271,11 +278,24 @@ vaultPath = lookupEnv "SULFUR_VAULT" >>= maybe defaultPath pure
   where
     defaultPath = (</> "vault.json") <$> getXdgDirectory XdgData "sulfur"
 
+-- | Windows vacía la carpeta temporal por su cuenta (Sensor de almacenamiento),
+-- así que una bóveda ahí se pierde sin aviso.
+inTempDir :: FilePath -> IO Bool
+inTempDir path = do
+  temp <- splitDirectories <$> (canonicalizePath =<< getTemporaryDirectory)
+  full <- splitDirectories <$> canonicalizePath path
+  pure (length temp <= length full && and (zipWith equalFilePath temp full))
+
+tempWarning :: FilePath -> String
+tempWarning path = path <> " está en la carpeta temporal, que Windows vacía por su cuenta."
+
 openVault :: IO (FilePath, Vault, MasterKey)
 openVault = do
   path <- vaultPath
   exists <- doesFileExist path
   unless exists $ die ("No hay bóveda en " <> path <> ". Créala con: sulfur init")
+  temp <- inTempDir path
+  when temp $ hPutStrLn stderr (tempWarning path <> " Muévela a otra carpeta y actualiza SULFUR_VAULT.")
   v <- loadVault path >>= orDie
   password <- askSecret "Contraseña maestra: "
   key <- orDie (unlock password v)

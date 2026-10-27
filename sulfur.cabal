@@ -56,6 +56,8 @@ test-suite spec
         base,
         sulfur,
         bytestring,
+        directory,
+        filepath,
         text,
         unicode-transforms,
         QuickCheck >=2.15 && <2.20
