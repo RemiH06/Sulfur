@@ -26,7 +26,7 @@ La versión 1.0 era un experimento en Kotlin sin valor de seguridad. Se conserva
 ```diff
 - La bóveda no ha tenido revisión externa. No aconsejo el uso con contraseñas reales todavía.
 - La huella visual no protege nada: cualquiera puede calcular el color de un nombre. Sirve para reconocer, no para autenticar.
-- No detecta si alguien restaura el archivo completo a una versión anterior.
+- Avisa si el archivo completo se regresó a una versión anterior, pero quien controle tu usuario de Windows puede borrar el registro que lo permite.
 ```
 
 Documentación con ejemplos de cada comando: [remih06.github.io/Sulfur](https://remih06.github.io/Sulfur/). El diseño criptográfico, los adversarios considerados y las limitaciones conocidas están en [docs/modelo-de-amenazas.md](docs/modelo-de-amenazas.md).
@@ -51,7 +51,7 @@ Documentación con ejemplos de cada comando: [remih06.github.io/Sulfur](https://
 - `sulfur add "<nombre>"` agrega una entrada con un secreto tecleado.
 - `sulfur gen "<nombre>" [longitud]` genera el secreto (24 caracteres por default, de 12 a 128). Si la entrada existe, lo reemplaza tras confirmar.
 - `sulfur copy "<nombre>"` copia el secreto al portapapeles por 30 segundos, marcado para que Windows no lo guarde en el historial (Win+V) ni lo suba a la nube, y lo vacía al terminar o con Ctrl+C. Si copiaste otra cosa en ese tiempo, no la toca. Solo en Windows.
-- `sulfur get "<nombre>"` muestra el secreto. Solo escribe a una terminal, nunca a un archivo o pipe.
+- `sulfur get "<nombre>"` muestra el secreto. Solo escribe a una terminal (también la de Git Bash), nunca a un archivo o pipe.
 - `sulfur edit "<nombre>"` cambia el secreto por uno tecleado.
 - `sulfur mv "<nombre>" "<nuevo>"` renombra una entrada; su color cambia con el nombre.
 - `sulfur rm "<nombre>"` borra una entrada tras confirmar.
@@ -72,6 +72,8 @@ Documentación con ejemplos de cada comando: [remih06.github.io/Sulfur](https://
 
 La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de datos del usuario en otros sistemas). La variable de entorno `SULFUR_VAULT` apunta a otra ruta.
 
+Para respaldarla en otra máquina, `scripts/respaldar.ps1` la copia por SSH con fecha en el nombre, verifica el SHA-256 en el destino, conserva las últimas 30 copias y no sube nada si no cambió. `scripts/programar-respaldo.ps1` lo registra como tarea programada de Windows (al iniciar sesión y cada 4 horas). El destino es un alias de `~/.ssh/config` con PowerShell como shell remoto (`-Destino`, por default `pixilate`).
+
 ## Features
 
 - Huella determinista en OKLCH: el texto se normaliza a NFC, la luminosidad se mantiene entre 0.45 y 0.85 (nunca negro ni blanco puros) y el croma se recorta lo justo para caber en sRGB.
@@ -84,12 +86,12 @@ La bóveda vive en `%APPDATA%\sulfur\vault.json` en Windows (el directorio de da
 - Guardado atómico: un corte a medio guardar no deja la bóveda truncada.
 - Copia de la versión anterior en `.bak` para deshacer el último cambio; `passwd` la borra.
 - Aviso si la bóveda está en la carpeta temporal, que Windows vacía por su cuenta.
+- Aviso si la bóveda cambió fuera de Sulfur (por ejemplo, regresada a una versión vieja), con un registro del último archivo guardado fuera de su carpeta.
 - Contraseñas leídas sin eco y sin historial; Unicode correcto en la consola de Windows.
 - Pruebas de propiedades con QuickCheck sobre la huella y la bóveda.
 
 ## Future Features
 
-- Respaldos automáticos de la bóveda a otra máquina.
 - Interfaz web, si se decide.
 
 ## Autoría

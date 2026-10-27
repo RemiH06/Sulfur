@@ -12,6 +12,7 @@ import Data.Text.Normalize (NormalizationMode (NFC, NFD), normalize)
 import Sulfur.Fingerprint
 import Sulfur.Import
 import Sulfur.Password
+import Sulfur.Rollback
 import Sulfur.Search
 import Sulfur.Vault
 import System.Directory (doesFileExist, getTemporaryDirectory, removePathForcibly)
@@ -258,6 +259,23 @@ properties =
           not sinRespaldo
             .&&. (anterior >>= entries k) === Right []
             .&&. (actual >>= entries k) === Right [newEntry (T.pack "uno") (T.pack "s")]
+    )
+  , ( "reversión: sin registro es primera vez, igual pasa, distinto se detecta"
+    , once . ioProperty $ do
+        dir <- (</> "sulfur-spec-vistas") <$> getTemporaryDirectory
+        removePathForcibly dir
+        let state = dir </> "vistas"
+            vault = dir </> "boveda.json"
+            vieja = BS.pack [1, 2, 3]
+            nueva = BS.pack [1, 2, 4]
+        antes <- checkSeen state vault vieja
+        recordSeen state vault vieja
+        igual <- checkSeen state vault vieja
+        recordSeen state vault nueva
+        regresada <- checkSeen state vault vieja
+        otraRuta <- checkSeen state (dir </> "otra.json") nueva
+        removePathForcibly dir
+        pure $ [antes, igual, regresada, otraRuta] === [FirstTime, Unchanged, ChangedOutside, FirstTime]
     )
   , ( "import: lee nombre=secreto con BOM, CRLF, comentarios y = en el secreto"
     , once $

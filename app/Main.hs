@@ -15,10 +15,11 @@ import Data.Text.IO qualified as TIO
 import Sulfur.Fingerprint
 import Sulfur.Import (parseEntries)
 import Sulfur.Password (generatePassword)
+import Sulfur.Rollback (Seen (..), checkSeen, recordSeen)
 import Sulfur.Search (matchEntries)
 import Sulfur.Vault
 import System.Console.Haskeline
-import System.Directory (XdgDirectory (XdgData), canonicalizePath, doesFileExist, getTemporaryDirectory, getXdgDirectory, removeFile)
+import System.Directory (XdgDirectory (XdgData, XdgState), canonicalizePath, doesFileExist, getTemporaryDirectory, getXdgDirectory, removeFile)
 import System.Environment (getArgs, lookupEnv)
 import System.Exit (die)
 import System.FilePath (equalFilePath, splitDirectories, (</>))
@@ -27,6 +28,8 @@ import Text.Printf (printf)
 import Text.Read (readMaybe)
 #if defined(mingw32_HOST_OS)
 import System.Win32.Console (getConsoleOutputCP, setConsoleOutputCP)
+import System.Win32.MinTTY (isMinTTYHandle)
+import System.Win32.Types (withHandleToHANDLE)
 #endif
 
 main :: IO ()
@@ -89,7 +92,7 @@ withUtf8Console = id
 
 cmdColor :: Text -> IO ()
 cmdColor text = do
-  tty <- hIsTerminalDevice stdout
+  tty <- isTerminal stdout
   let color = fingerprint text
   printf "%s%s  oklch(%.3f %.3f %.1f)\n" (swatch tty color) (toHex color)
     (lightness color) (chroma color) (hue color)
@@ -105,7 +108,7 @@ cmdInit = do
     unless ok $ die "Sin cambios. Apunta SULFUR_VAULT a otra carpeta, por ejemplo %APPDATA%\\sulfur."
   password <- askNewMaster
   (v, _) <- newVault defaultKdf password >>= orDie
-  saveVault path v
+  save path v
   putStrLn ("Bóveda creada en " <> path)
 
 cmdAdd :: Text -> IO ()
@@ -115,15 +118,15 @@ cmdAdd name = do
   secret <- askNew "Secreto: " "Repítelo: "
   (login, category) <- askMeta
   v' <- addEntry key (Entry name secret login category) v >>= orDie
-  saveVault path v'
-  tty <- hIsTerminalDevice stdout
+  save path v'
+  tty <- isTerminal stdout
   putStrLn (entryLine tty name)
 
 -- | Solo escribe a una terminal: redirigido, el secreto acabaría en un
 -- archivo o en otro proceso.
 cmdGet :: Text -> IO ()
 cmdGet query = do
-  tty <- hIsTerminalDevice stdout
+  tty <- isTerminal stdout
   unless tty $ die "get solo escribe en una terminal, nunca a un archivo o pipe."
   (_, v, key) <- openVault
   e <- resolve key query v
@@ -166,8 +169,8 @@ cmdGen name len = do
       ok <- confirm (T.unpack name <> " ya existe. ¿Reemplazar su secreto por uno generado? [s/N] ")
       unless ok $ die "Sin cambios."
       replaceSecret key name secret v >>= orDie
-  saveVault path v'
-  tty <- hIsTerminalDevice stdout
+  save path v'
+  tty <- isTerminal stdout
   putStrLn (entryLine tty name)
 
 cmdEdit :: Text -> IO ()
@@ -176,8 +179,8 @@ cmdEdit query = do
   name <- entryName <$> resolve key query v
   secret <- askNew ("Secreto nuevo para " <> T.unpack name <> ": ") "Repítelo: "
   v' <- replaceSecret key name secret v >>= orDie
-  saveVault path v'
-  tty <- hIsTerminalDevice stdout
+  save path v'
+  tty <- isTerminal stdout
   putStrLn (entryLine tty name)
 
 cmdRemove :: Text -> IO ()
@@ -187,7 +190,7 @@ cmdRemove query = do
   v' <- removeEntry key name v >>= orDie
   ok <- confirm ("¿Borrar " <> T.unpack name <> "? No se puede deshacer. [s/N] ")
   unless ok $ die "Sin cambios."
-  saveVault path v'
+  save path v'
   putStrLn ("Borrada: " <> T.unpack name)
 
 cmdSet :: Text -> String -> Text -> IO ()
@@ -199,8 +202,8 @@ cmdSet query field value = do
   (path, v, key) <- openVault
   name <- entryName <$> resolve key query v
   v' <- setter key name (Just value) v >>= orDie
-  saveVault path v'
-  tty <- hIsTerminalDevice stdout
+  save path v'
+  tty <- isTerminal stdout
   putStrLn (entryLine tty name)
 
 -- | Muestra la huella anterior y la nueva: al cambiar el nombre cambia el color.
@@ -210,8 +213,8 @@ cmdRename query new = do
   (path, v, key) <- openVault
   old <- entryName <$> resolve key query v
   v' <- renameEntry key old new v >>= orDie
-  saveVault path v'
-  tty <- hIsTerminalDevice stdout
+  save path v'
+  tty <- isTerminal stdout
   putStrLn (entryLine tty old)
   putStrLn (entryLine tty new)
 
@@ -227,8 +230,8 @@ cmdImport file = do
   when (null new) $ die ("No hay entradas en " <> file)
   (path, v, key) <- openVault
   v' <- addEntries key new v >>= orDie
-  saveVault path v'
-  tty <- hIsTerminalDevice stdout
+  save path v'
+  tty <- isTerminal stdout
   mapM_ (putStrLn . entryLine tty . entryName) new
   putStrLn ("Importadas: " <> show (length new))
   ok <- confirm ("¿Borrar " <> file <> "? Tiene los secretos en claro. [s/N] ")
@@ -243,7 +246,7 @@ cmdPasswd = do
   (path, v, key) <- openVault
   password <- askNewMaster
   (v', _) <- changeMaster key defaultKdf password v >>= orDie
-  saveVault path v'
+  save path v'
   let backup = backupPath path
   hasBackup <- doesFileExist backup
   when hasBackup $ removeFile backup
@@ -254,7 +257,7 @@ cmdList :: Maybe Text -> IO ()
 cmdList only = do
   (_, v, key) <- openVault
   es <- orDie (entries key v)
-  tty <- hIsTerminalDevice stdout
+  tty <- isTerminal stdout
   let shown = sortOn order (maybe id (filter . inCategory) only es)
       order e = (isNothing (entryCategory e), T.toCaseFold <$> entryCategory e, T.toCaseFold (entryName e))
       nameWidth = maximum (0 : map (T.length . entryName) shown)
@@ -296,10 +299,44 @@ openVault = do
   unless exists $ die ("No hay bóveda en " <> path <> ". Créala con: sulfur init")
   temp <- inTempDir path
   when temp $ hPutStrLn stderr (tempWarning path <> " Muévela a otra carpeta y actualiza SULFUR_VAULT.")
-  v <- loadVault path >>= orDie
+  bytes <- BS.readFile path
+  v <- orDie (decodeVault bytes)
+  dir <- seenDir
+  seen <- checkSeen dir path bytes
+  when (seen == ChangedOutside) $ do
+    ok <- confirm $
+      "La bóveda cambió fuera de Sulfur desde la última vez. Si restauraste un respaldo"
+        <> " o la copiaste de otro equipo, es normal; si no, alguien pudo regresarla a una"
+        <> " versión vieja. ¿Aceptarla como la actual? [s/N] "
+    unless ok $ die "Sin cambios. La bóveda no se abrió."
   password <- askSecret "Contraseña maestra: "
   key <- orDie (unlock password v)
+  when (seen == FirstTime) $
+    hPutStrLn stderr "Primera vez que se abre esta bóveda en este equipo; desde ahora Sulfur avisa si cambia por fuera."
+  unless (seen == Unchanged) $ recordSeen dir path bytes
   pure (path, v, key)
+
+-- | Guarda y registra el archivo resultante como el último que dejó Sulfur
+-- ('checkSeen').
+save :: FilePath -> Vault -> IO ()
+save path v = do
+  saveVault path v
+  dir <- seenDir
+  recordSeen dir path =<< BS.readFile path
+
+-- | Fuera de la carpeta de la bóveda (%LOCALAPPDATA%\sulfur\vistas en
+-- Windows), para que reemplazar la carpeta entera no se lleve el registro.
+seenDir :: IO FilePath
+seenDir = (</> "vistas") <$> getXdgDirectory XdgState "sulfur"
+
+-- | Si un handle llega a una terminal. La de Git Bash (mintty) no es una
+-- consola de Windows sino un pipe con nombre, así que se reconoce aparte.
+isTerminal :: Handle -> IO Bool
+#if defined(mingw32_HOST_OS)
+isTerminal h = (||) <$> hIsTerminalDevice h <*> withHandleToHANDLE h isMinTTYHandle
+#else
+isTerminal = hIsTerminalDevice
+#endif
 
 -- | Lee una línea. En una consola real usa haskeline, que lee Unicode con la
 -- API de Windows y puede ocultar lo tecleado; sin historial ni autocompletado,
@@ -363,7 +400,7 @@ resolve key query v = do
     [] -> die (describe (EntryNotFound query))
     [e] -> pure e
     candidates -> do
-      tty <- hIsTerminalDevice stdout
+      tty <- isTerminal stdout
       sequence_ [putStrLn (show i <> ") " <> entryLine tty (entryName e)) | (i, e) <- zip [1 :: Int ..] candidates]
       answer <- readInput False ("¿Cuál? [1-" <> show (length candidates) <> "] ")
       case readMaybe . T.unpack . T.strip . T.pack =<< answer of
