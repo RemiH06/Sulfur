@@ -20,6 +20,7 @@ library
         Sulfur.Password
         Sulfur.Rollback
         Sulfur.Search
+        Sulfur.Secret
         Sulfur.Vault
     build-depends:
         base >=4.17 && <5,
@@ -44,6 +45,7 @@ executable sulfur
         directory,
         filepath,
         haskeline >=0.8 && <0.9,
+        ram,
         text
     if os(windows)
         build-depends: Win32
@@ -59,6 +61,7 @@ test-suite spec
         bytestring,
         directory,
         filepath,
+        ram,
         text,
         unicode-transforms,
         QuickCheck >=2.15 && <2.20

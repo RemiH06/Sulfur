@@ -2,7 +2,7 @@
 
 Documento para quien revise la seguridad de Sulfur antes de que se use con contraseñas reales. Describe qué protege la herramienta, contra quién, con qué primitivas y dónde están los límites conocidos, para que la revisión pueda ir directo al código en vez de reconstruir el diseño.
 
-Estado: versión 2.0 del CLI, formato de bóveda versión 3. Sin revisión externa todavía.
+Estado: versión 2.0 del CLI, formato de bóveda versión 4. Sin revisión externa todavía.
 
 ## Alcance
 
@@ -41,7 +41,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 - Argon2id, versión 1.3 (`Crypto.KDF.Argon2` de `crypton`).
 - Parámetros por default: 3 pasadas, 64 MiB, 4 carriles (RFC 9106, segunda opción recomendada). Se guardan en el archivo.
 - Sal de 16 bytes aleatorios por bóveda. Salida de 32 bytes en `ScrubbedBytes`, que se borra al liberarse.
-- La maestra se normaliza a Unicode NFC antes de derivar, para que la misma contraseña tecleada con o sin caracteres combinados dé la misma clave.
+- La maestra se normaliza a Unicode NFC antes de derivar, para que la misma contraseña tecleada con o sin caracteres combinados dé la misma clave. Si es ASCII ya está en NFC y no se toca; si no, pasa una vez por `Text` (ver limitación 4).
 - Mínimo de 12 caracteres en el CLI; no hay estimación de fuerza.
 - Al leer el archivo, los parámetros se acotan: 1 a 64 pasadas, 1 a 16 carriles, memoria entre 8 KiB por carril y 4 GiB, sal de al menos 16 bytes. Un archivo alterado no puede pedir una derivación arbitrariamente cara ni una sal corta.
 
@@ -49,7 +49,8 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 
 - XChaCha20-Poly1305 (`Crypto.Cipher.ChaChaPoly1305`, `initializeX`).
 - Nonce de 24 bytes aleatorios por cada sellado, del generador del sistema operativo (`getRandomBytes` en IO llama a `getEntropy`; en Windows, `CryptGenRandom`). Con 192 bits, la colisión es despreciable aunque se reutilice la clave indefinidamente.
-- Texto plano de cada entrada: JSON `{"name": ..., "secret": ..., "login": ..., "category": ...}`, con `login` y `category` opcionales (se omiten si no hay). Todo viaja junto, así que el archivo no revela nombres, correos ni categorías.
+- Texto plano de cada entrada (formato 4): por campo, una etiqueta de un byte (`n` nombre, `s` secreto, `l` usuario, `c` categoría), la longitud en 4 bytes big endian y el contenido en UTF-8. Nombre y secreto son obligatorios; usuario y categoría se omiten si no hay. Al leer se rechazan etiquetas repetidas o desconocidas, bytes de más y UTF-8 inválido (`CorruptEntry`). Todo viaja junto, así que el archivo no revela nombres, correos ni categorías.
+- El formato 3 guardaba el texto plano en JSON, que obliga a pasar el secreto por un `Text` de `aeson`. Se sigue leyendo (para abrir respaldos viejos), con su propio AAD, y el CLI lo convierte al 4 la primera vez que lo abre (`upgrade`); toda mutación de la biblioteca también lo convierte antes, para no mezclar blobs de dos formatos.
 - Antes de sellar, el texto plano se rellena al siguiente múltiplo de 256 bytes con el esquema ISO/IEC 7816-4 (`0x80` y ceros; siempre agrega al menos un byte, así que quitarlo no es ambiguo). Un relleno inválido al abrir da `CorruptEntry`.
 - Formato de cada blob: `nonce (24) ‖ cifrado ‖ tag (16)`, en base64 dentro del JSON. Una entrada común mide 296 bytes.
 - La comparación del tag es de tiempo constante (`Eq` de `Poly1305.Auth` usa `constEq`). El texto descifrado solo se devuelve si el tag coincide (`open` en `Vault.hs`).
@@ -63,7 +64,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 
 ### Separación de dominios
 
-- AAD distinto para el índice (`sulfur-vault-v3-index`) y para las entradas (`sulfur-vault-v3-entry`), así un blob de un tipo no se acepta como el otro.
+- AAD distinto para el índice (`sulfur-vault-v4-index`) y para las entradas (`sulfur-vault-v4-entry`), así un blob de un tipo no se acepta como el otro. Lleva el número de formato, así que un blob del formato 3 tampoco pasa por uno del 4.
 - Los campos del encabezado (versión, parámetros de Argon2, sal) no van en el AAD. Alterarlos cambia la clave derivada o hace fallar la lectura, así que el resultado es una bóveda que no abre, no una que abre con otro contenido.
 
 ### Importación
@@ -89,18 +90,23 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 - Regresar el archivo entero a una versión anterior se avisa si el registro de `vistas` sigue ahí (ver limitación 1).
 - Puede impedir el uso (borrar o corromper el archivo). La disponibilidad no está en alcance.
 
-**A3, observador de pantalla.** Las contraseñas se leen sin eco cuando la entrada es una consola real (`getPassword` de haskeline; verificado a mano en PowerShell el 4 de octubre de 2026, junto con que una maestra con "ñ" tecleada y mandada por pipe dan la misma clave, y que la página de códigos de la consola se restaura aunque se cancele con Ctrl+C). `get` solo escribe a una terminal y se niega a escribir a un archivo o pipe. `copy` evita la pantalla: pone el secreto en el portapapeles (`app/Clipboard.hs`) junto con los formatos `ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory = 0` y `CanUploadToCloudClipboard = 0`, que Windows respeta para no guardarlo en el historial de Win+V ni subirlo al portapapeles en la nube. A los 30 segundos, o con Ctrl+C, lo vacía si el número de secuencia del portapapeles no cambió; si otro programa escribió encima, no lo toca. `list` sí muestra nombres, categorías y correos en pantalla (no secretos) y se puede redirigir.
+**A3, observador de pantalla.** Las contraseñas se leen sin eco cuando la entrada es una consola real (`readHidden` en `app/Main.hs`: `ReadConsoleW` tecla por tecla con el eco, el modo de línea y el procesado de Ctrl+C apagados; el modo de línea se apaga porque con él la consola guarda lo tecleado en su historial aunque no se vea). El modo anterior de la consola se restaura al terminar, también con error. `get` solo escribe a una terminal y se niega a escribir a un archivo o pipe. `copy` evita la pantalla: pone el secreto en el portapapeles (`app/Clipboard.hs`) junto con los formatos `ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory = 0` y `CanUploadToCloudClipboard = 0`, que Windows respeta para no guardarlo en el historial de Win+V ni subirlo al portapapeles en la nube. A los 30 segundos, o con Ctrl+C, lo vacía si el número de secuencia del portapapeles no cambió; si otro programa escribió encima, no lo toca. `list` sí muestra nombres, categorías y correos en pantalla (no secretos) y se puede redirigir.
 
 ## Limitaciones conocidas
 
 1. **Reversión del archivo completo.** El índice no puede notar que `vault.json` entero se regresó a una versión anterior y válida. Para eso, cada guardado registra el SHA-256 del archivo en `%LOCALAPPDATA%\sulfur\vistas\` (un archivo por bóveda, nombrado por el hash de su ruta; `src/Sulfur/Rollback.hs`), fuera de la carpeta de la bóveda. Al abrir, si el archivo descifra pero no coincide con el registro, Sulfur pide confirmación antes de aceptarlo, porque restaurar un respaldo propio es un uso legítimo. Perder el registro no bloquea nada: se avisa "primera vez que se abre esta bóveda en este equipo" y se vuelve a crear. Por eso no protege contra A2 si también controla el usuario de Windows (puede borrar el registro y reemplazar la bóveda); sí contra una copia reemplazada en otro lado (nube, USB, respaldo restaurado por error) y contra quien solo puede escribir en la carpeta de la bóveda.
 2. **Las copias viejas siguen abriendo con la maestra vieja.** Después de `passwd`, cualquier respaldo previo de la bóveda se abre con la maestra anterior. Igual con entradas borradas o rotadas: siguen en los respaldos viejos. `scripts/respaldar.ps1` guarda hasta 30 copias con fecha en otra máquina por SSH, y esas copias también abren con la maestra de su momento. Cada guardado deja la versión anterior en `vault.json.bak`, junto a la bóveda, para deshacer el último cambio; `passwd` la borra, pero el borrado no garantiza que sea irrecuperable del disco, y una entrada borrada o rotada sigue en el `.bak` hasta el siguiente cambio.
-3. **Longitud visible en bloques.** Con el relleno a 256 bytes, solo se distingue una entrada cuyo nombre más secreto pase de unos 230 bytes (los 23 bytes fijos del JSON cuentan), y aun así solo en saltos de 256.
-4. **Secretos en memoria.** Solo la clave derivada vive en memoria que se borra. Los secretos pasan por `String` y `Text`, que el recolector de basura de GHC no borra al liberar.
+3. **Longitud visible en bloques.** Con el relleno a 256 bytes, solo se distingue una entrada cuyo nombre más secreto pase de unos 245 bytes (cuentan 10 bytes fijos de etiquetas y longitudes, 5 más por usuario o categoría), y aun así solo en saltos de 256.
+4. **Secretos en memoria.** La clave derivada, la maestra y el secreto de cada entrada viven en `ScrubbedBytes` (`Sulfur.Secret`), que se borra al liberarse, desde que se leen hasta que se usan: lectura de la consola directo a ese búfer, cifrado y descifrado sobre él, `get` escribe sus bytes con `hPutBuf` y `copy` los convierte a UTF-16 con `MultiByteToWideChar` directo a la memoria del portapapeles. El tipo `Secret` no se puede mostrar (`show` da `<secreto>`) y compara en tiempo constante. Quedan copias fuera de ese control:
+   - El búfer interno del `Handle` de stdin (entrada por pipe) y de stdout (`get`), que se reutiliza y no se borra.
+   - La memoria del portapapeles después de vaciarlo, y los búferes de la consola y de la terminal.
+   - Una maestra con caracteres no ASCII pasa una vez por `Text` para normalizarla a NFC.
+   - Los secretos de `import`, que se leen del archivo como `Text`, y los de una bóveda en formato 3 al convertirla (pasan por el JSON de `aeson` una sola vez).
+   - Las copias que haga el propio Windows (archivo de paginación, hibernación, volcados de memoria). Ninguna de estas memorias se bloquea con `VirtualLock`.
 5. **Historial de la terminal.** Lo que imprime `get` queda en el historial de desplazamiento de la terminal hasta que se limpie.
 6. **Entrada por pipe.** Si la entrada no es una consola, se lee como UTF-8 sin ocultar nada. Mandar la maestra con `echo` o similares la deja en el historial del shell; es responsabilidad de quien lo haga.
 7. **Git Bash (mintty).** No es una consola de Windows sino un pipe con nombre: las contraseñas se ven al teclear. `get` lo reconoce como terminal (`isMinTTYHandle` de `Win32`) y sí escribe; redirigido a un archivo o a otro pipe, se sigue negando.
-8. **Dependencias.** `crypton`, `ram`, `aeson` y las demás están fijadas en `cabal.project.freeze`, pero no se han auditado como parte de este proyecto.
+8. **Dependencias.** `crypton`, `ram` (que da `ScrubbedBytes`), `aeson` y las demás están fijadas en `cabal.project.freeze`, pero no se han auditado como parte de este proyecto.
 9. **Archivo de importación.** Mientras exista, tiene todos los secretos en claro. Borrarlo no garantiza que sea irrecuperable (ver "Importación").
 10. **Portapapeles.** Durante los 30 segundos de `copy`, cualquier programa del mismo usuario puede leer el secreto (A4, fuera de alcance), y un administrador de portapapeles de terceros puede ignorar los formatos de exclusión. Los formatos se verificaron presentes durante el plazo y el vaciado al final, pero la exclusión del historial de Win+V depende de que Windows los respete.
 
@@ -113,6 +119,7 @@ El CLI está en `app/Main.hs`, el generador de contraseñas en `src/Sulfur/Passw
 5. ¿Es adecuado el bloque de 256 bytes para el relleno, o conviene un esquema como Padmé que escale con el tamaño?
 6. ¿Algún riesgo en normalizar la maestra a NFC antes de derivar?
 7. ¿El registro de reversión (SHA-256 del archivo, guardado fuera de su carpeta y aceptado como nuevo si falta) es un buen equilibrio frente a un contador que bloquee la bóveda si se pierde?
+8. `Sulfur.Secret` valida y normaliza sobre una vista sin copia de la memoria del secreto (`unsafePackCStringLen` dentro de `withByteArray`, con el resultado forzado antes de soltar el puntero). ¿Es correcto, o la pereza puede hacer que la vista se use fuera de ese alcance?
 
 ## Cómo reproducir las verificaciones
 

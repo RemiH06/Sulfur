@@ -4,16 +4,16 @@
 -- (Win+V) ni al portapapeles en la nube, y vaciarlo al terminar el plazo.
 module Clipboard (copyTransient) where
 
-import Data.Text (Text)
+import Sulfur.Secret (Secret)
 #if defined(mingw32_HOST_OS)
 import Control.Concurrent (threadDelay)
 import Control.Exception (finally, onException)
 import Control.Monad (unless, when)
-import Data.Text qualified as T
+import Data.ByteArray qualified as BA
 import Data.Word (Word16, Word32, Word8)
-import Foreign.C.String (withCWStringLen)
-import Foreign.Marshal.Utils (copyBytes)
+import Foreign.C.Types (CInt (..))
 import Foreign.Ptr (Ptr, castPtr, nullPtr, plusPtr)
+import Sulfur.Secret (secretBytes)
 import Foreign.Storable (poke)
 import Graphics.Win32.GDI.Clip (ClipboardFormat, cF_UNICODETEXT, closeClipboard, emptyClipboard, registerClipboardFormat)
 import System.Win32.Mem (gMEM_MOVEABLE, globalAlloc, globalLock)
@@ -25,7 +25,7 @@ import System.Exit (die)
 -- | Copia, espera el plazo y, al terminar o con Ctrl+C, vacía el portapapeles
 -- solo si sigue teniendo lo que se copió aquí, para no borrar algo que el
 -- usuario haya copiado después. 'False' si otro contenido ya lo reemplazó.
-copyTransient :: Int -> Text -> IO Bool
+copyTransient :: Int -> Secret -> IO Bool
 #if defined(mingw32_HOST_OS)
 copyTransient seconds secret = do
   withClipboard $ do
@@ -66,12 +66,22 @@ blob size fill = do
   _ <- c_GlobalUnlock mem
   pure mem
 
--- | UTF-16 con terminador nulo, como lo pide CF_UNICODETEXT.
-unicodeBlob :: Text -> IO HANDLE
-unicodeBlob t = withCWStringLen (T.unpack t) $ \(src, len) ->
-  blob ((len + 1) * 2) $ \dst -> do
-    copyBytes dst (castPtr src) (len * 2)
-    poke (dst `plusPtr` (len * 2)) (0 :: Word16)
+-- | UTF-16 con terminador nulo, como lo pide CF_UNICODETEXT. Windows convierte
+-- de la memoria del secreto a la del portapapeles, sin copia intermedia en
+-- Haskell. El secreto ya es UTF-8 válido ('Secret').
+unicodeBlob :: Secret -> IO HANDLE
+unicodeBlob s = BA.withByteArray (secretBytes s) $ \src -> do
+  let len = fromIntegral (BA.length (secretBytes s))
+  units <- if len == 0 then pure 0 else c_MultiByteToWideChar cpUtf8 mbErrInvalidChars src len nullPtr 0
+  when (len > 0 && units == 0) $ ioError (userError "el secreto no se pudo convertir a UTF-16")
+  blob ((fromIntegral units + 1) * 2) $ \dst -> do
+    when (len > 0) $ do
+      _ <- c_MultiByteToWideChar cpUtf8 mbErrInvalidChars src len (castPtr dst) units
+      pure ()
+    poke (dst `plusPtr` (fromIntegral units * 2)) (0 :: Word16)
+  where
+    cpUtf8 = 65001
+    mbErrInvalidChars = 0x8
 
 dwordBlob :: Word32 -> IO HANDLE
 dwordBlob v = blob 4 (\dst -> poke (castPtr dst) v)
@@ -90,6 +100,8 @@ foreign import ccall unsafe "windows.h SetClipboardData" c_SetClipboardData :: C
 foreign import ccall unsafe "windows.h GlobalUnlock" c_GlobalUnlock :: HANDLE -> IO BOOL
 foreign import ccall unsafe "windows.h GlobalFree" c_GlobalFree :: HANDLE -> IO HANDLE
 foreign import ccall unsafe "windows.h GetClipboardSequenceNumber" c_GetClipboardSequenceNumber :: IO DWORD
+foreign import ccall unsafe "windows.h MultiByteToWideChar"
+  c_MultiByteToWideChar :: Word32 -> DWORD -> Ptr Word8 -> CInt -> Ptr Word16 -> CInt -> IO CInt
 #else
 copyTransient _ _ = die "copy por ahora solo funciona en Windows." >> pure False
 #endif

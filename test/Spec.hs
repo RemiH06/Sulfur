@@ -3,6 +3,7 @@ module Main (main) where
 import Control.Exception (IOException, try)
 import Control.Monad (unless)
 import Data.Bits (complement)
+import Data.ByteArray qualified as BA
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Either (isLeft)
@@ -14,6 +15,7 @@ import Sulfur.Import
 import Sulfur.Password
 import Sulfur.Rollback
 import Sulfur.Search
+import Sulfur.Secret
 import Sulfur.Vault
 import System.Directory (doesFileExist, getTemporaryDirectory, removePathForcibly)
 import System.Exit (exitFailure)
@@ -25,12 +27,15 @@ import Test.QuickCheck
 withText :: Testable p => (T.Text -> p) -> Property
 withText p = forAll (T.pack . getUnicodeString <$> arbitrary) p
 
+sec :: String -> Secret
+sec = secretFromText . T.pack
+
 -- | Entrada con nombre no vacío, secreto cualquiera y, a veces, usuario y
 -- categoría, todo Unicode.
 withEntry :: Testable p => (Entry -> p) -> Property
 withEntry = forAll $ do
   name <- T.pack . getUnicodeString <$> arbitrary `suchThat` (not . null . getUnicodeString)
-  secret <- T.pack . getUnicodeString <$> arbitrary
+  secret <- sec . getUnicodeString <$> arbitrary
   login <- fmap (T.pack . getUnicodeString) <$> arbitrary
   category <- fmap (T.pack . getUnicodeString) <$> arbitrary
   pure (Entry name secret login category)
@@ -38,7 +43,11 @@ withEntry = forAll $ do
 -- | Argon2 al mínimo para que las pruebas no tarden; la seguridad de los
 -- parámetros reales no es lo que se prueba aquí.
 fresh :: IO (Vault, MasterKey)
-fresh = newVault (KdfParams 1 64 1) (T.pack "maestra de prueba") >>= either (fail . show) pure
+fresh = newVault (KdfParams 1 64 1) (sec "maestra de prueba") >>= either (fail . show) pure
+
+-- | Los caracteres de un secreto ASCII, para revisar contraseñas generadas.
+asciiOf :: Secret -> String
+asciiOf = map (toEnum . fromIntegral) . BA.unpack . secretBytes
 
 -- | Bóveda nueva con una entrada.
 withOne :: Entry -> IO (Vault, MasterKey, Vault)
@@ -52,7 +61,7 @@ withOne e = do
 withTwo :: Entry -> IO (Vault, MasterKey, Vault, Entry)
 withTwo e = do
   (v, k, v1) <- withOne e
-  let other = newEntry (normalize NFC (entryName e) <> T.pack "-otra") (T.pack "intacto")
+  let other = newEntry (normalize NFC (entryName e) <> T.pack "-otra") (sec "intacto")
   v2 <- addEntry k other v1 >>= either (fail . show) pure
   pure (v, k, v2, other)
 
@@ -91,8 +100,8 @@ properties =
     , once . ioProperty $ do
         (v, _) <- fresh
         pure $
-          either (const False) (const True) (unlock (T.pack "maestra de prueba") v)
-            .&&. either (=== WrongPassword) (const (property False)) (unlock (T.pack "maestra de prueba ") v)
+          either (const False) (const True) (unlock (sec "maestra de prueba") v)
+            .&&. either (=== WrongPassword) (const (property False)) (unlock (sec "maestra de prueba ") v)
     )
   , ( "bóveda: mismo contenido y misma clave dan cifrados distintos"
     , withEntry $ \e -> ioProperty $ do
@@ -113,7 +122,7 @@ properties =
   , ( "bóveda: alterar parámetros o sal del encabezado no abre"
     , once . ioProperty $ do
         (v, _) <- fresh
-        let opensWith v' = either (=== WrongPassword) (const (property False)) (unlock (T.pack "maestra de prueba") v')
+        let opensWith v' = either (=== WrongPassword) (const (property False)) (unlock (sec "maestra de prueba") v')
         pure $
           opensWith v {vaultKdf = KdfParams 1 32 1}
             .&&. opensWith v {vaultKdf = KdfParams 2 64 1}
@@ -131,13 +140,13 @@ properties =
   , ( "bóveda: reinsertar un blob viejo (secreto anterior) se detecta"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v2, _) <- withTwo e
-        v3 <- replaceSecret k (entryName e) (T.pack "nuevo") v2 >>= either (fail . show) pure
+        v3 <- replaceSecret k (entryName e) (sec "nuevo") v2 >>= either (fail . show) pure
         let replayed = take 1 (vaultEntries v2) ++ drop 1 (vaultEntries v3)
         pure $ entries k v3 {vaultEntries = replayed} === Left TamperedIndex
     )
   , ( "bóveda: rechaza nombres duplicados, también con otra forma Unicode"
     , once . ioProperty $ do
-        let e = newEntry (T.pack "\x00e9xito") (T.pack "uno")
+        let e = newEntry (T.pack "\x00e9xito") (sec "uno")
         (_, k, v1) <- withOne e
         r <- addEntry k e {entryName = T.pack "e\x0301xito"} v1
         pure $ r === Left (DuplicateName (T.pack "\x00e9xito"))
@@ -165,8 +174,8 @@ properties =
   , ( "bóveda: editar cambia solo ese secreto"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v2, other) <- withTwo e
-        r <- replaceSecret k (entryName e) (T.pack "nuevo") v2
-        pure $ (r >>= entries k) === Right [(normalizeEntry e) {entrySecret = T.pack "nuevo"}, other]
+        r <- replaceSecret k (entryName e) (sec "nuevo") v2
+        pure $ (r >>= entries k) === Right [(normalizeEntry e) {entrySecret = sec "nuevo"}, other]
     )
   , ( "bóveda: renombrar conserva el secreto y la otra entrada"
     , withEntry $ \e -> ioProperty $ do
@@ -196,23 +205,23 @@ properties =
     )
   , ( "categoría: el filtro ignora mayúsculas, espacios y forma Unicode"
     , once $
-        let conCategoria c = (newEntry (T.pack "x") (T.pack "y")) {entryCategory = Just (T.pack c)}
+        let conCategoria c = (newEntry (T.pack "x") (sec "y")) {entryCategory = Just (T.pack c)}
          in inCategory (T.pack "  TRABAJO ") (conCategoria "trabajo")
               -- \& corta el escape: sin él, \x0301a se leería como U+301A.
               .&&. inCategory (T.pack "Categori\x0301\&a") (conCategoria "Categor\x00ed\&a")
               .&&. not (inCategory (T.pack "trabajo") (conCategoria "personal"))
-              .&&. not (inCategory (T.pack "trabajo") (newEntry (T.pack "x") (T.pack "y")))
+              .&&. not (inCategory (T.pack "trabajo") (newEntry (T.pack "x") (sec "y")))
     )
   , ( "bóveda: cambiar la maestra conserva las entradas y retira la anterior"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v2, _) <- withTwo e
-        changed <- changeMaster k (KdfParams 1 64 1) (T.pack "maestra nueva de prueba") v2
+        changed <- changeMaster k (KdfParams 1 64 1) (sec "maestra nueva de prueba") v2
         pure $ case changed of
           Left err -> counterexample (show err) False
           Right (v', k') ->
             entries k' v' === entries k v2
-              .&&. either (=== WrongPassword) (const (property False)) (unlock (T.pack "maestra de prueba") v')
-              .&&. either (const False) (const True) (unlock (T.pack "maestra nueva de prueba") v')
+              .&&. either (=== WrongPassword) (const (property False)) (unlock (sec "maestra de prueba") v')
+              .&&. either (const False) (const True) (unlock (sec "maestra nueva de prueba") v')
     )
   , ( "relleno: ida y vuelta, múltiplo de 256 y siempre agrega algo"
     , forAll (BS.pack <$> arbitrary) $ \b ->
@@ -226,7 +235,7 @@ properties =
   , ( "bóveda: entradas cortas y largas miden lo mismo en disco"
     , once . ioProperty $ do
         (v, k) <- fresh
-        r <- addEntries k [newEntry (T.pack "a") (T.pack "x"), newEntry (T.pack "un nombre más largo") (T.replicate 150 (T.pack "y"))] v
+        r <- addEntries k [newEntry (T.pack "a") (sec "x"), newEntry (T.pack "un nombre más largo") (sec (replicate 150 'y'))] v
         pure $ case r of
           Left err -> counterexample (show err) False
           Right v1 -> case map BS.length (vaultEntries v1) of
@@ -236,7 +245,7 @@ properties =
   , ( "bóveda: importar es todo o nada ante nombres repetidos"
     , withEntry $ \e -> ioProperty $ do
         (_, k, v1) <- withOne e
-        let nueva = newEntry (normalize NFC (entryName e) <> T.pack "-nueva") (T.pack "z")
+        let nueva = newEntry (normalize NFC (entryName e) <> T.pack "-nueva") (sec "z")
         contraExistente <- addEntries k [nueva, e] v1
         dentroDeLista <- addEntries k [nueva, nueva] v1
         pure $
@@ -248,7 +257,7 @@ properties =
         dir <- (</> "sulfur-spec-respaldo") <$> getTemporaryDirectory
         removePathForcibly dir
         let path = dir </> "boveda.json"
-        (v, k, v1) <- withOne (newEntry (T.pack "uno") (T.pack "s"))
+        (v, k, v1) <- withOne (newEntry (T.pack "uno") (sec "s"))
         saveVault path v
         sinRespaldo <- doesFileExist (backupPath path)
         saveVault path v1
@@ -258,7 +267,7 @@ properties =
         pure $
           not sinRespaldo
             .&&. (anterior >>= entries k) === Right []
-            .&&. (actual >>= entries k) === Right [newEntry (T.pack "uno") (T.pack "s")]
+            .&&. (actual >>= entries k) === Right [newEntry (T.pack "uno") (sec "s")]
     )
   , ( "reversión: sin registro es primera vez, igual pasa, distinto se detecta"
     , once . ioProperty $ do
@@ -280,12 +289,12 @@ properties =
   , ( "import: lee nombre=secreto con BOM, CRLF, comentarios y = en el secreto"
     , once $
         parseEntries (T.pack "\xfeffGmail personal=abc=def\r\n# comentario\r\n\r\n  banco = con espacios \r\n")
-          === Right [newEntry (T.pack "Gmail personal") (T.pack "abc=def"), newEntry (T.pack "banco") (T.pack " con espacios ")]
+          === Right [newEntry (T.pack "Gmail personal") (sec "abc=def"), newEntry (T.pack "banco") (sec " con espacios ")]
     )
   , ( "import: # solo es comentario al inicio de la línea, no dentro del secreto"
     , once $
         parseEntries (T.pack "user=#password\n  # comentario con espacios\nfiltro=a#b\n")
-          === Right [newEntry (T.pack "user") (T.pack "#password"), newEntry (T.pack "filtro") (T.pack "a#b")]
+          === Right [newEntry (T.pack "user") (sec "#password"), newEntry (T.pack "filtro") (sec "a#b")]
     )
   , ( "import: los encabezados [categoría | usuario] aplican hasta el siguiente"
     , once $
@@ -304,11 +313,11 @@ properties =
                 ]
           )
           === Right
-            [ Entry (T.pack "Gmail") (T.pack "a") (Just (T.pack "hex@gmail.com")) (Just (T.pack "personal"))
-            , Entry (T.pack "Slack") (T.pack "b") Nothing (Just (T.pack "trabajo"))
-            , Entry (T.pack "X") (T.pack "c") (Just (T.pack "otro@correo.mx")) Nothing
-            , newEntry (T.pack "Y") (T.pack "d")
-            , newEntry (T.pack "[x") (T.pack "y]")
+            [ Entry (T.pack "Gmail") (sec "a") (Just (T.pack "hex@gmail.com")) (Just (T.pack "personal"))
+            , Entry (T.pack "Slack") (sec "b") Nothing (Just (T.pack "trabajo"))
+            , Entry (T.pack "X") (sec "c") (Just (T.pack "otro@correo.mx")) Nothing
+            , newEntry (T.pack "Y") (sec "d")
+            , newEntry (T.pack "[x") (sec "y]")
             ]
     )
   , ( "import: reporta cada línea mala sin repetir secretos"
@@ -323,11 +332,11 @@ properties =
     , forAll (T.pack . getUnicodeString <$> arbitrary) $ \s ->
         let quoted = T.length s >= 2 && T.head s `elem` ['"', '\''] && T.head s == T.last s
          in not (T.null s) && not (T.any (`elem` ['\n', '\r']) s) && not quoted ==>
-              parseEntries (T.pack "x=" <> s) === Right [newEntry (T.pack "x") s]
+              parseEntries (T.pack "x=" <> s) === Right [newEntry (T.pack "x") (secretFromText s)]
     )
   , ( "búsqueda: exacto gana, luego sin mayúsculas ni acentos, luego contenido"
     , once $
-        let es = map (\n -> newEntry (T.pack n) (T.pack "s")) ["git", "github", "GitHub Enterprise", "Gmail personal", "Gmail trabajo", "\x00d1\&and\x00fa"]
+        let es = map (\n -> newEntry (T.pack n) (sec "s"))["git", "github", "GitHub Enterprise", "Gmail personal", "Gmail trabajo", "\x00d1\&and\x00fa"]
             names q = map (T.unpack . entryName) (matchEntries (T.pack q) es)
          in names "git" === ["git"]
               .&&. names "GITHUB" === ["github"]
@@ -340,12 +349,12 @@ properties =
   , ( "búsqueda: el nombre exacto siempre se encuentra a sí mismo y solo a sí mismo"
     , withEntry $ \e ->
         let e' = normalizeEntry e
-            otra = newEntry (entryName e' <> T.pack " 2") (T.pack "s")
+            otra = newEntry (entryName e' <> T.pack " 2") (sec "s")
          in matchEntries (entryName e) [otra, e'] === [e']
     )
   , ( "contraseña generada: longitud, alfabeto y todas las clases"
     , forAll (choose (12, 128)) $ \n -> ioProperty $ do
-        p <- T.unpack <$> generatePassword n
+        p <- asciiOf <$> generatePassword n
         pure $
           length p === n
             .&&. all (`elem` concat passwordClasses) p
@@ -353,8 +362,51 @@ properties =
     )
   , ( "contraseña generada: rechaza longitudes imposibles"
     , once . ioProperty $ do
-        r <- try (generatePassword 3) :: IO (Either IOException T.Text)
+        r <- try (generatePassword 3) :: IO (Either IOException Secret)
         pure (isLeft r)
+    )
+    -- Hecha con el ejecutable del formato 3, antes de que existiera el 4.
+  , ( "formato 3: se abre y se convierte al 4 con las mismas entradas"
+    , once . ioProperty $ do
+        old <- loadVault "test/fixtures/v3.json" >>= either (fail . show) pure
+        k <- either (fail . show) pure (unlock (sec "maestra de prueba v3") old)
+        new <- upgrade k old >>= either (fail . show) pure
+        let expected =
+              Right
+                [ Entry (T.pack "Gmail") (sec "abc=Def#1") (Just (T.pack "hex@example.com")) (Just (T.pack "personal"))
+                , newEntry (T.pack "\x00d1\&and\x00fa") (sec "contrase\x00f1\&a-\x00f1")
+                ]
+        pure $
+          vaultFormat old === 3
+            .&&. entries k old === expected
+            .&&. vaultFormat new === currentFormat
+            .&&. entries k new === expected
+            .&&. either (const False) (const True) (unlock (sec "maestra de prueba v3") new)
+            .&&. decodeVault (LBS.toStrict (encodeVault new)) === Right new
+    )
+  , ( "formato 3: un cambio lo convierte antes de agregar"
+    , once . ioProperty $ do
+        old <- loadVault "test/fixtures/v3.json" >>= either (fail . show) pure
+        k <- either (fail . show) pure (unlock (sec "maestra de prueba v3") old)
+        r <- addEntry k (newEntry (T.pack "nueva") (sec "x")) old
+        pure $ case r of
+          Left err -> counterexample (show err) False
+          Right v -> vaultFormat v === currentFormat .&&. (length <$> entries k v) === Right 3
+    )
+  , ( "secreto: show no lo muestra y compara por contenido"
+    , once $
+        show (sec "s3cr3t0") === "<secreto>"
+          .&&. sec "abc" === sec "abc"
+          .&&. sec "abc" =/= sec "abd"
+          .&&. sec "abc" =/= sec "ab"
+    )
+  , ( "secreto: rechaza UTF-8 inválido y cuenta caracteres, no bytes"
+    , once $
+        map (fmap secretLength . secretFromUtf8 . BA.pack) [[0x61, 0xff], [0xc3, 0xb1, 0x61], [0xed, 0xa0, 0x80]]
+          === [Nothing, Just 2, Nothing]
+    )
+  , ( "secreto: la maestra se normaliza a NFC"
+    , withText $ \t -> normalizeSecret (secretFromText (normalize NFD t)) === secretFromText (normalize NFC t)
     )
   ]
 

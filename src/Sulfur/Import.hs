@@ -1,6 +1,8 @@
 -- | Lectura de un archivo `nombre=secreto` para cargar muchas entradas de una
 -- vez. El archivo tiene los secretos en claro: los errores nunca los repiten,
--- solo dan número de línea y nombre.
+-- solo dan número de línea y nombre. Se lee como 'Text', así que los secretos
+-- importados pasan por memoria que no se borra; el archivo ya los tenía en
+-- claro.
 module Sulfur.Import
   ( parseEntries
   ) where
@@ -10,6 +12,7 @@ import Data.List (mapAccumL)
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Sulfur.Secret (secretFromText)
 import Sulfur.Vault (Entry (..))
 
 -- | Categoría y usuario que aplican a las entradas de abajo.
@@ -54,7 +57,7 @@ parseLine (category, login) n line
   | T.null name = Left (at "falta el nombre antes del =")
   | T.null secret = Left (at ("el secreto de " <> T.unpack name <> " está vacío"))
   | quoted = Left (at ("el secreto de " <> T.unpack name <> " está entre comillas; quítalas si no son parte de la contraseña"))
-  | otherwise = Right (Entry name secret login category)
+  | otherwise = Right (Entry name (secretFromText secret) login category)
   where
     (rawName, rest) = T.breakOn (T.pack "=") line
     name = T.strip rawName

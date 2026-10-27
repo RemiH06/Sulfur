@@ -5,18 +5,23 @@ module Main (main) where
 import Clipboard (copyTransient)
 import Control.Exception (finally)
 import Control.Monad (unless, when)
-import Data.List (dropWhileEnd, sortOn)
+import Data.ByteArray (ScrubbedBytes)
+import Data.ByteArray qualified as BA
+import Data.List (sortOn)
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.ByteString qualified as BS
 import Data.Text.Encoding (decodeUtf8')
-import Data.Text.IO qualified as TIO
+import Data.Word (Word8)
+import Foreign.Ptr (Ptr, plusPtr)
+import Foreign.Storable (peekByteOff)
 import Sulfur.Fingerprint
 import Sulfur.Import (parseEntries)
 import Sulfur.Password (generatePassword)
 import Sulfur.Rollback (Seen (..), checkSeen, recordSeen)
 import Sulfur.Search (matchEntries)
+import Sulfur.Secret
 import Sulfur.Vault
 import System.Console.Haskeline
 import System.Directory (XdgDirectory (XdgData, XdgState), canonicalizePath, doesFileExist, getTemporaryDirectory, getXdgDirectory, removeFile)
@@ -27,9 +32,15 @@ import System.IO
 import Text.Printf (printf)
 import Text.Read (readMaybe)
 #if defined(mingw32_HOST_OS)
+import Data.Bits (complement, (.&.), (.|.))
+import Data.Word (Word16, Word32)
+import Foreign.C.Types (CInt (..))
+import Foreign.Marshal.Alloc (alloca)
+import Foreign.Ptr (nullPtr)
+import Foreign.Storable (peek, peekElemOff)
 import System.Win32.Console (getConsoleOutputCP, setConsoleOutputCP)
 import System.Win32.MinTTY (isMinTTYHandle)
-import System.Win32.Types (withHandleToHANDLE)
+import System.Win32.Types (BOOL, DWORD, HANDLE, withHandleToHANDLE)
 #endif
 
 main :: IO ()
@@ -131,7 +142,15 @@ cmdGet query = do
   (_, v, key) <- openVault
   e <- resolve key query v
   when (entryName e /= query) $ putStrLn (entryLine tty (entryName e))
-  TIO.putStrLn (entrySecret e)
+  putSecretLn (entrySecret e)
+
+-- | Los bytes del secreto tal cual (ya son UTF-8 y la consola está en UTF-8),
+-- sin pasar por 'String'.
+putSecretLn :: Secret -> IO ()
+putSecretLn s = do
+  hFlush stdout
+  BA.withByteArray (secretBytes s) $ \p -> hPutBuf stdout (p :: Ptr Word8) (BA.length (secretBytes s))
+  putStrLn ""
 
 -- | El secreto no pasa por la pantalla ni por el historial de la terminal.
 cmdCopy :: Text -> IO ()
@@ -314,7 +333,15 @@ openVault = do
   when (seen == FirstTime) $
     hPutStrLn stderr "Primera vez que se abre esta bóveda en este equipo; desde ahora Sulfur avisa si cambia por fuera."
   unless (seen == Unchanged) $ recordSeen dir path bytes
-  pure (path, v, key)
+  if vaultFormat v == currentFormat
+    then pure (path, v, key)
+    else do
+      v' <- upgrade key v >>= orDie
+      save path v'
+      hPutStrLn stderr $
+        "Bóveda convertida al formato " <> show currentFormat <> " (secretos fuera de JSON)."
+          <> " La versión anterior quedó en " <> backupPath path <> "."
+      pure (path, v', key)
 
 -- | Guarda y registra el archivo resultante como el último que dejó Sulfur
 -- ('checkSeen').
@@ -338,44 +365,152 @@ isTerminal h = (||) <$> hIsTerminalDevice h <*> withHandleToHANDLE h isMinTTYHan
 isTerminal = hIsTerminalDevice
 #endif
 
--- | Lee una línea. En una consola real usa haskeline, que lee Unicode con la
--- API de Windows y puede ocultar lo tecleado; sin historial ni autocompletado,
--- así que nada se escribe a disco. Si la entrada no es una consola (pipe,
--- Git Bash), haskeline decodificaría con la página de códigos del sistema y
--- una maestra con "ñ" daría otra clave, así que ahí se lee directo como UTF-8.
-readInput :: Bool -> String -> IO (Maybe String)
-readInput hidden label = do
+-- | Lee una línea visible (confirmaciones, usuario, categoría, elegir entre
+-- candidatas). En una consola real usa haskeline, que lee Unicode con la API
+-- de Windows; sin historial ni autocompletado, así que nada se escribe a
+-- disco. Si la entrada no es una consola (pipe, Git Bash), haskeline
+-- decodificaría con la página de códigos del sistema, así que ahí se lee la
+-- línea en bytes y se decodifica como UTF-8.
+readInput :: String -> IO (Maybe Text)
+readInput label = do
   console <- hIsTerminalDevice stdin
   if console
-    then runInputT quiet ((if hidden then getPassword Nothing else getInputLine) label)
+    then fmap T.pack <$> runInputT quiet (getInputLine label)
     else do
-      putStr label >> hFlush stdout
-      eof <- hIsEOF stdin
-      if eof then pure Nothing else Just . dropWhileEnd (== '\r') <$> hGetLine stdin
+      prompt label
+      line <- readLineBytes
+      traverse (either (const (die "La entrada no está en UTF-8.")) pure . decodeUtf8' . BA.convert) line
   where
     quiet = Settings {complete = noCompletion, historyFile = Nothing, autoAddHistory = False}
 
-askSecret :: String -> IO Text
-askSecret label = readInput True label >>= maybe (die "Entrada cancelada.") (pure . T.pack)
+prompt :: String -> IO ()
+prompt label = putStr label >> hFlush stdout
 
-askNew :: String -> String -> IO Text
+-- | Lee un secreto sin pasar por 'String' ni 'Text' (haskeline los devuelve
+-- como 'String'). En una consola, sin eco ('readHidden'); si no (pipe, Git
+-- Bash), la línea en bytes y sin ocultar nada.
+askSecret :: String -> IO Secret
+askSecret label = do
+  console <- hIsTerminalDevice stdin
+  prompt label
+  raw <- if console then readHidden else readLineBytes
+  bytes <- maybe (die "Entrada cancelada.") pure raw
+  maybe (die "La entrada no está en UTF-8.") pure (secretFromUtf8 bytes)
+
+-- | Más de lo que mide cualquier contraseña razonable; el búfer se reserva
+-- completo para no copiar el secreto al crecer.
+maxLine :: Int
+maxLine = 4096
+
+-- | Una línea de stdin, byte por byte y directo a 'ScrubbedBytes', sin el
+-- salto ni el `\r` de CRLF. 'Nothing' si stdin se acabó antes de leer algo.
+-- Todo lo que no viene de una consola pasa por aquí, para no mezclar lecturas
+-- de bytes y de caracteres en el mismo handle.
+readLineBytes :: IO (Maybe ScrubbedBytes)
+readLineBytes = do
+  (len, buf) <- BA.allocRet maxLine (go 0) :: IO (Maybe Int, ScrubbedBytes)
+  pure ((`BA.take` buf) <$> len)
+  where
+    go :: Int -> Ptr Word8 -> IO (Maybe Int)
+    go n p
+      | n >= maxLine = die "La línea es demasiado larga."
+      | otherwise = do
+          got <- hGetBuf stdin (p `plusPtr` n) 1
+          if got == 0
+            then pure (if n == 0 then Nothing else Just n)
+            else do
+              b <- peekByteOff p n :: IO Word8
+              if b /= 10
+                then go (n + 1) p
+                else do
+                  previous <- if n > 0 then peekByteOff p (n - 1) else pure (0 :: Word8)
+                  pure (Just (if previous == 13 then n - 1 else n))
+
+-- | Sin eco. En Windows también sin el modo de línea de la consola, porque en
+-- ese modo la consola guarda lo tecleado en su historial (flecha arriba, F7)
+-- aunque no se vea: se lee tecla por tecla en UTF-16, directo a
+-- 'ScrubbedBytes', y se convierte a UTF-8 con WideCharToMultiByte. Retroceso
+-- borra, Enter termina y Ctrl+C cancela.
+readHidden :: IO (Maybe ScrubbedBytes)
+#if defined(mingw32_HOST_OS)
+readHidden = withHandleToHANDLE stdin $ \h -> do
+  mode <- alloca $ \p -> c_GetConsoleMode h p >> peek p
+  let raw = mode .&. complement (enableProcessedInput .|. enableLineInput .|. enableEchoInput)
+  (units, wide) <-
+    (c_SetConsoleMode h raw >> BA.allocRet (maxLine * 2) (keys h 0) :: IO (Maybe Int, ScrubbedBytes))
+      `finally` c_SetConsoleMode h mode
+  putStrLn ""
+  traverse (toUtf8 wide) units
+  where
+    enableProcessedInput = 0x1
+    enableLineInput = 0x2
+    enableEchoInput = 0x4
+
+keys :: HANDLE -> Int -> Ptr Word16 -> IO (Maybe Int)
+keys h n buf
+  | n >= maxLine = die "La línea es demasiado larga."
+  | otherwise = do
+      got <- alloca $ \readPtr -> do
+        ok <- c_ReadConsoleW h (buf `plusPtr` (n * 2)) 1 readPtr nullPtr
+        unless ok $ die "No se pudo leer la consola."
+        peek readPtr
+      c <- peekElemOff buf n
+      case (got, c) of
+        (0, _) -> keys h n buf
+        (_, 13) -> pure (Just n)
+        (_, 10) -> pure (Just n)
+        (_, 3) -> pure Nothing
+        (_, 8) -> do
+          -- Un carácter fuera del plano básico ocupa dos unidades (sustitutos).
+          previous <- if n > 0 then peekElemOff buf (n - 1) else pure 0
+          keys h (max 0 (if n >= 2 && previous >= 0xDC00 && previous <= 0xDFFF then n - 2 else n - 1)) buf
+        _ -> keys h (n + 1) buf
+
+-- | Rechaza sustitutos sueltos en vez de cambiarlos por U+FFFD.
+toUtf8 :: ScrubbedBytes -> Int -> IO ScrubbedBytes
+toUtf8 _ 0 = pure BA.empty
+toUtf8 wide units = BA.withByteArray wide $ \src -> do
+  size <- c_WideCharToMultiByte cpUtf8 wcErrInvalidChars src (fromIntegral units) nullPtr 0 nullPtr nullPtr
+  when (size == 0) $ die "La entrada no es Unicode válido."
+  BA.alloc (fromIntegral size) $ \dst -> do
+    _ <- c_WideCharToMultiByte cpUtf8 wcErrInvalidChars src (fromIntegral units) dst size nullPtr nullPtr
+    pure ()
+  where
+    cpUtf8 = 65001
+    wcErrInvalidChars = 0x80
+
+foreign import ccall unsafe "windows.h GetConsoleMode" c_GetConsoleMode :: HANDLE -> Ptr DWORD -> IO BOOL
+foreign import ccall unsafe "windows.h SetConsoleMode" c_SetConsoleMode :: HANDLE -> DWORD -> IO BOOL
+foreign import ccall safe "windows.h ReadConsoleW"
+  c_ReadConsoleW :: HANDLE -> Ptr Word16 -> DWORD -> Ptr DWORD -> Ptr () -> IO BOOL
+foreign import ccall unsafe "windows.h WideCharToMultiByte"
+  c_WideCharToMultiByte :: Word32 -> DWORD -> Ptr Word16 -> CInt -> Ptr Word8 -> CInt -> Ptr Word8 -> Ptr BOOL -> IO CInt
+#else
+readHidden = do
+  echo <- hGetEcho stdin
+  line <- (hSetEcho stdin False >> readLineBytes) `finally` hSetEcho stdin echo
+  putStrLn ""
+  pure line
+#endif
+
+askNew :: String -> String -> IO Secret
 askNew label confirmLabel = do
   first <- askSecret label
-  when (T.null first) $ die "No puede estar vacío."
+  when (nullSecret first) $ die "No puede estar vacío."
   second <- askSecret confirmLabel
   unless (first == second) $ die "No coinciden."
   pure first
 
-askNewMaster :: IO Text
+askNewMaster :: IO Secret
 askNewMaster = do
   password <- askNew "Contraseña maestra nueva: " "Repítela: "
-  when (T.length password < 12) $ die "La contraseña maestra debe tener al menos 12 caracteres."
+  when (secretLength password < 12) $ die "La contraseña maestra debe tener al menos 12 caracteres."
   pure password
 
 confirm :: String -> IO Bool
 confirm question = do
-  answer <- readInput False question
-  pure (maybe False ((`elem` ["s", "si", "sí"]) . T.unpack . T.toLower . T.strip . T.pack) answer)
+  answer <- readInput question
+  pure (maybe False ((`elem` map T.pack ["s", "si", "sí"]) . T.toLower . T.strip) answer)
 
 orDie :: Either VaultError a -> IO a
 orDie = either (die . describe) pure
@@ -402,17 +537,17 @@ resolve key query v = do
     candidates -> do
       tty <- isTerminal stdout
       sequence_ [putStrLn (show i <> ") " <> entryLine tty (entryName e)) | (i, e) <- zip [1 :: Int ..] candidates]
-      answer <- readInput False ("¿Cuál? [1-" <> show (length candidates) <> "] ")
-      case readMaybe . T.unpack . T.strip . T.pack =<< answer of
+      answer <- readInput ("¿Cuál? [1-" <> show (length candidates) <> "] ")
+      case readMaybe . T.unpack . T.strip =<< answer of
         Just i | i >= 1 && i <= length candidates -> pure (candidates !! (i - 1))
         _ -> die "Sin cambios."
 
 -- | Usuario y categoría son opcionales; Enter sin escribir los deja vacíos.
 askMeta :: IO (Maybe Text, Maybe Text)
 askMeta = do
-  login <- readInput False "Usuario o correo (opcional): "
-  category <- readInput False "Categoría (opcional): "
-  pure (T.pack <$> login, T.pack <$> category)
+  login <- readInput "Usuario o correo (opcional): "
+  category <- readInput "Categoría (opcional): "
+  pure (login, category)
 
 entryLine :: Bool -> Text -> String
 entryLine tty name = colorPrefix tty name <> T.unpack name
